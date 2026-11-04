@@ -1,0 +1,25 @@
+{
+  "name": "cczu-all-knowing",
+  "version": "0.2.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "pnpm": {
+    "overrides": {
+      "sharp": "^0.35.4"
+    }
+  },
+  "scripts": {
+    "dev": "corepack pnpm --parallel --filter @cczu/frontend --filter @cczu/backend dev",
+    "dev:frontend": "corepack pnpm --filter @cczu/frontend dev",
+    "dev:backend": "corepack pnpm --filter @cczu/backend dev",
+    "build": "corepack pnpm --filter @cczu/backend build && corepack pnpm --filter @cczu/frontend build",
+    "start:backend": "corepack pnpm --filter @cczu/backend start",
+    "preview:frontend": "corepack pnpm --filter @cczu/frontend preview",
+    "db:generate": "corepack pnpm --filter @cczu/backend db:generate",
+    "db:push": "corepack pnpm --filter @cczu/backend db:push",
+    "db:seed": "corepack pnpm --filter @cczu/backend db:seed",
+    "db:init": "corepack pnpm --filter @cczu/backend db:init",
+    "ts-check": "corepack pnpm --filter @cczu/backend ts-check && corepack pnpm --filter @cczu/frontend ts-check",
+    "lint": "corepack pnpm --filter @cczu/backend lint && corepack pnpm --filter @cczu/frontend lint:build"
+  }
+}
