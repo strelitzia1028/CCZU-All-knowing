@@ -17,38 +17,7 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7a564ce2-3407-4b92-a21a-efd4280d30a7" name="更改" comment="20261105001 初次提交">
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/drizzle/meta/_journal.json" beforeDir="false" afterPath="$PROJECT_DIR$/backend/drizzle/meta/_journal.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/agent.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/agent.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/anti-injection.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/anti-injection.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/app.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/app.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/database/schema.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/database/schema.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/knowledge-search.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/knowledge-search.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/auth.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/chat.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/chat.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/knowledge.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/knowledge.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/review.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/review.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/source-types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/source-types.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/sources.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/sources.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/routes/tags.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/routes/tags.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/search-ranking.ts" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/search-ranking.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/admin/knowledge/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/admin/knowledge/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/admin/layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/admin/layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/admin/review/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/admin/review/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/admin/source-types/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/admin/source-types/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/admin/tags/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/admin/tags/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/chat/layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/chat/layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/chat/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/chat/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/globals.css" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/globals.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/sources/layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/sources/layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/app/sources/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/app/sources/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/app-provider.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/app-provider.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/navigation.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/navigation.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/shared/src/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/shared/src/index.ts" afterDir="false" />
-    </list>
+    <list default="true" id="7a564ce2-3407-4b92-a21a-efd4280d30a7" name="更改" comment="20261106001 功能几乎已经完善，开始准备精细化调整" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -283,6 +252,7 @@
     <MESSAGE value="20261104001 初次提交" />
     <MESSAGE value="20261104002 初次提交" />
     <MESSAGE value="20261105001 初次提交" />
-    <option name="LAST_COMMIT_MESSAGE" value="20261105001 初次提交" />
+    <MESSAGE value="20261106001 功能几乎已经完善，开始准备精细化调整" />
+    <option name="LAST_COMMIT_MESSAGE" value="20261106001 功能几乎已经完善，开始准备精细化调整" />
   </component>
 </project>
