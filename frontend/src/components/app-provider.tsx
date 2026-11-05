@@ -21,6 +21,12 @@ interface AppContextType {
   ) => Promise<void>;
   adminLogin: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateDisplayName: (displayName: string) => Promise<void>;
+  changePassword: (passwords: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType>({
@@ -30,6 +36,8 @@ const AppContext = createContext<AppContextType>({
   register: async () => {},
   adminLogin: async () => {},
   logout: async () => {},
+  updateDisplayName: async () => {},
+  changePassword: async () => {},
 });
 
 export function useApp() {
@@ -123,6 +131,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateDisplayName = useCallback(async (displayName: string) => {
+    const response = await apiFetch('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: displayName }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || '更新显示名称失败');
+    }
+    setUser(data.user);
+  }, []);
+
+  const changePassword = useCallback(
+    async ({
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    }: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    }) => {
+      const response = await apiFetch('/api/auth/password', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || '修改密码失败');
+      }
+    },
+    []
+  );
+
   return (
     <AppContext.Provider
       value={{
@@ -132,6 +180,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         register,
         adminLogin,
         logout,
+        updateDisplayName,
+        changePassword,
       }}
     >
       {children}

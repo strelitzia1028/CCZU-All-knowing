@@ -33,7 +33,9 @@ import type {
 } from '@cczu/shared';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/components/app-provider';
+import { SourceDiscussion } from '@/components/source-discussion';
 import { apiFetch } from '@/lib/api';
+import { formatDateTime } from '@/lib/format-date';
 import {
   clearAgentRequest,
   loadAgentRequest,
@@ -178,10 +180,6 @@ function applyAgentSnapshotToMessages(
   if (assistantIndex >= 0) next[assistantIndex] = assistant;
   else next.push(assistant);
   return next;
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('zh-CN');
 }
 
 function isExpired(value: string) {
@@ -974,6 +972,16 @@ export default function ChatPage() {
                                 <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
                                   {source.type_label}
                                 </span>
+                                {source.allow_discussion && (
+                                  <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                    可回复
+                                  </span>
+                                )}
+                                {source.is_expired && (
+                                  <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                                    已过期
+                                  </span>
+                                )}
                                 <span className="text-sm font-medium text-slate-800 transition-colors group-hover:text-blue-700">
                                   {source.title}
                                 </span>
@@ -984,7 +992,14 @@ export default function ChatPage() {
                               </p>
                               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
                                 <span>{source.author}</span>
-                                <span>{formatDate(source.created_at)}</span>
+                                {typeof source.overall_match === 'number' && (
+                                  <span>
+                                    综合匹配 {source.overall_match}%
+                                  </span>
+                                )}
+                                <span>
+                                  {formatDateTime(source.created_at)}
+                                </span>
                                 {source.location && (
                                   <span className="inline-flex items-center gap-1">
                                     <MapPin className="h-3 w-3" />
@@ -1051,7 +1066,9 @@ export default function ChatPage() {
                               </span>
                               <span>Tag 匹配 {source.tag_match}%</span>
                               <span>综合匹配 {source.overall_match}%</span>
-                              <span>{formatDate(source.updated_at)}</span>
+                              <span>
+                                {formatDateTime(source.updated_at)}
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -1326,6 +1343,16 @@ export default function ChatPage() {
                 <span className="w-fit rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
                   {selectedCommunitySource.type_label}
                 </span>
+                {selectedCommunitySource.allow_discussion && (
+                  <span className="w-fit rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                    可回复
+                  </span>
+                )}
+                {selectedCommunitySource.is_expired && (
+                  <span className="w-fit rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                    已过期
+                  </span>
+                )}
                 <DialogTitle className="mt-2 text-xl leading-7 text-slate-900">
                   {selectedCommunitySource.title}
                 </DialogTitle>
@@ -1333,12 +1360,28 @@ export default function ChatPage() {
                   <span>{selectedCommunitySource.author}</span>
                   <span>
                     发布于{' '}
-                    {formatDate(selectedCommunitySource.created_at)}
+                    {formatDateTime(
+                      selectedCommunitySource.created_at
+                    )}
                   </span>
                   {selectedCommunitySource.location && (
                     <span className="inline-flex items-center gap-1">
                       <MapPin className="h-3 w-3" />
                       {selectedCommunitySource.location}
+                    </span>
+                  )}
+                  <span>
+                    有效期：
+                    {selectedCommunitySource.valid_until
+                      ? formatDateTime(
+                          selectedCommunitySource.valid_until
+                        )
+                      : '长期有效'}
+                  </span>
+                  {typeof selectedCommunitySource.overall_match ===
+                    'number' && (
+                    <span>
+                      综合匹配 {selectedCommunitySource.overall_match}%
                     </span>
                   )}
                 </DialogDescription>
@@ -1358,6 +1401,17 @@ export default function ChatPage() {
                       </span>
                     ))}
                   </div>
+                )}
+                {selectedCommunitySource.created_by && (
+                  <SourceDiscussion
+                    sourceId={selectedCommunitySource.id}
+                    sourceOwnerId={selectedCommunitySource.created_by}
+                    sourceOwnerName={selectedCommunitySource.author}
+                    sourceStatus="approved"
+                    allowDiscussion={
+                      selectedCommunitySource.allow_discussion
+                    }
+                  />
                 )}
               </div>
             </>

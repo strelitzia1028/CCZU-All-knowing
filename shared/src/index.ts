@@ -29,12 +29,12 @@ export interface KnowledgeItem {
   id: string;
   title: string;
   content: string;
+  source_type: string | null;
   source_level: string;
   review_status: string;
   created_at: string;
   updated_at: string;
   source_id?: string | null;
-  is_demo?: boolean;
   knowledge_item_tags: KnowledgeTag[];
 }
 
@@ -51,7 +51,9 @@ export interface SourceItem {
   contact_mode: string;
   contact_value: string | null;
   valid_until: string | null;
+  is_expired?: boolean;
   location: string | null;
+  allow_discussion: boolean;
   status: string;
   reject_reason: string | null;
   created_at: string;
@@ -81,9 +83,66 @@ export interface CommunitySourceResult {
   type: string;
   type_label: string;
   location: string | null;
+  valid_until: string | null;
+  is_expired: boolean;
+  overall_match?: number;
+  tag_match?: number;
   created_at: string;
   author: string;
+  created_by: string;
+  allow_discussion: boolean;
   tags: Array<{ id: string; name: string; description?: string | null }>;
+}
+
+export interface SourceComment {
+  id: string;
+  content: string;
+  author_id: string;
+  author_name: string;
+  author_role?: Role;
+  created_at: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  content: string;
+  sender_name?: string;
+  sender_role?: Role;
+  created_at: string;
+}
+
+export interface InteractionNotification {
+  id: string;
+  kind: 'comment' | 'private_message';
+  source_id: string;
+  content: string;
+  created_at: string;
+  read_at: string | null;
+  actor_id: string;
+  actor_name: string;
+  actor_role: Role;
+  source_title: string;
+  source_excerpt: string;
+  source_type_label: string;
+  source_status: string;
+  source_owner_id: string;
+  source_owner_name: string;
+  source_owner_role: Role;
+  allow_discussion: boolean;
+}
+
+export interface MonitoredUser {
+  id: string;
+  username: string | null;
+  display_name: string;
+  role: 'user' | 'admin';
+  created_at: string;
+  source_count: number;
+  approved_source_count: number;
+  comment_count: number;
+  message_count: number;
 }
 
 export interface AgentTraceStep {

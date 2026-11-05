@@ -29,6 +29,7 @@ interface RankableText {
   location?: string | null
   tagNames: string[]
   descriptionText?: string
+  expired?: boolean
 }
 
 function normalize(value: string): string {
@@ -195,6 +196,9 @@ export function rankCandidate<T extends RankableText>(
     entityGroups.some((group) => group.score === 0)
   ) {
     score = 0
+  }
+  if (item.expired) {
+    score *= 0.65
   }
 
   return {

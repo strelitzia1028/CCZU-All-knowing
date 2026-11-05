@@ -12,6 +12,86 @@ interface SourceRow {
 export const reviewRouter = Router();
 
 reviewRouter.get(
+  '/users',
+  asyncRoute(async (request, response) => {
+    try {
+      await requireAdmin(request);
+      const search =
+        typeof request.query.search === 'string'
+          ? request.query.search.trim().slice(0, 100)
+          : '';
+      const sort = request.query.sort === 'name' ? 'name' : 'created';
+      const escapedSearch = search.replace(/[\\%_]/g, '\\$&');
+      const pattern = `%${escapedSearch}%`;
+      const orderBy =
+        sort === 'name'
+          ? 'LOWER(p.display_name) ASC, p.created_at DESC'
+          : 'p.created_at DESC, LOWER(p.display_name) ASC';
+      const rows = await query<Record<string, unknown>>(
+        `SELECT
+           p.id,
+           p.username,
+           p.display_name,
+           p.role,
+           p.created_at,
+           (
+             SELECT count(*)::int
+             FROM sources s
+             WHERE s.created_by = p.id
+           ) AS source_count,
+           (
+             SELECT count(*)::int
+             FROM sources s
+             WHERE s.created_by = p.id
+               AND s.status = 'approved'
+           ) AS approved_source_count,
+           (
+             SELECT count(*)::int
+             FROM source_comments sc
+             WHERE sc.author_id = p.id
+           ) AS comment_count,
+           (
+             SELECT count(*)::int
+             FROM direct_messages dm
+             WHERE dm.sender_id = p.id
+           ) AS message_count
+         FROM profiles p
+         WHERE (
+           $1 = ''
+           OR p.display_name ILIKE $2 ESCAPE '\\'
+           OR COALESCE(p.username, '') ILIKE $2 ESCAPE '\\'
+         )
+         ORDER BY ${orderBy}
+         LIMIT 500`,
+        [search, pattern]
+      );
+      const countRows = await query<{ total: string | number }>(
+        `SELECT count(*) AS total
+         FROM profiles p
+         WHERE (
+           $1 = ''
+           OR p.display_name ILIKE $2 ESCAPE '\\'
+           OR COALESCE(p.username, '') ILIKE $2 ESCAPE '\\'
+         )`,
+        [search, pattern]
+      );
+      const overallRows = await query<{ total: string | number }>(
+        `SELECT count(*) AS total FROM profiles`
+      );
+      return response.json({
+        data: rows,
+        total: Number(countRows[0]?.total || 0),
+        overall_total: Number(overallRows[0]?.total || 0),
+        sort,
+        search,
+      });
+    } catch (error) {
+      return sendApiError(response, error, '获取用户监控列表失败');
+    }
+  })
+);
+
+reviewRouter.get(
   '/catalog-requests',
   asyncRoute(async (request, response) => {
     try {

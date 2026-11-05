@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "profiles_display_name_unique_ci" ON "profiles" USING btree (lower("display_name"));

@@ -1,4 +1,4 @@
-import { pgTable, serial, timestamp, varchar, text, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, serial, timestamp, varchar, text, index, uniqueIndex, boolean } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const healthCheck = pgTable("health_check", {
@@ -16,7 +16,12 @@ export const profiles = pgTable(
 		role: varchar("role", { length: 20 }).notNull().default("user"),
 		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
-	(table) => [index("profiles_role_idx").on(table.role)]
+	(table) => [
+		index("profiles_role_idx").on(table.role),
+		uniqueIndex("profiles_display_name_unique_ci").on(
+			sql`lower(${table.display_name})`
+		),
+	]
 );
 
 export const tags = pgTable(
@@ -53,6 +58,7 @@ export const knowledgeItems = pgTable(
 		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
 		title: varchar("title", { length: 256 }).notNull(),
 		content: text("content").notNull(),
+		source_type: varchar("source_type", { length: 30 }),
 		source_level: varchar("source_level", { length: 30 }).notNull().default("user_share"),
 		review_status: varchar("review_status", { length: 20 }).notNull().default("approved"),
 		created_by: varchar("created_by", { length: 36 }).references(() => profiles.id),
@@ -94,6 +100,7 @@ export const sources = pgTable(
 		contact_value: text("contact_value"),
 		valid_until: timestamp("valid_until", { withTimezone: true }),
 		location: varchar("location", { length: 256 }),
+		allow_discussion: boolean("allow_discussion").notNull().default(false),
 		status: varchar("status", { length: 20 }).notNull().default("draft"),
 		reject_reason: text("reject_reason"),
 		created_by: varchar("created_by", { length: 36 }).notNull().references(() => profiles.id),
@@ -118,6 +125,42 @@ export const sourceTags = pgTable(
 		index("st_source_id_idx").on(table.source_id),
 		index("st_tag_id_idx").on(table.tag_id),
 		uniqueIndex("st_source_tag_unique").on(table.source_id, table.tag_id),
+	]
+);
+
+export const sourceComments = pgTable(
+	"source_comments",
+	{
+		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		source_id: varchar("source_id", { length: 36 }).notNull().references(() => sources.id, { onDelete: "cascade" }),
+		author_id: varchar("author_id", { length: 36 }).notNull().references(() => profiles.id),
+		content: text("content").notNull(),
+		read_at: timestamp("read_at", { withTimezone: true }),
+		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("source_comments_source_idx").on(table.source_id),
+		index("source_comments_author_idx").on(table.author_id),
+		index("source_comments_read_idx").on(table.source_id, table.read_at),
+	]
+);
+
+export const directMessages = pgTable(
+	"direct_messages",
+	{
+		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		source_id: varchar("source_id", { length: 36 }).notNull().references(() => sources.id, { onDelete: "cascade" }),
+		sender_id: varchar("sender_id", { length: 36 }).notNull().references(() => profiles.id),
+		recipient_id: varchar("recipient_id", { length: 36 }).notNull().references(() => profiles.id),
+		content: text("content").notNull(),
+		read_at: timestamp("read_at", { withTimezone: true }),
+		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("direct_messages_source_idx").on(table.source_id),
+		index("direct_messages_sender_idx").on(table.sender_id),
+		index("direct_messages_recipient_idx").on(table.recipient_id),
+		index("direct_messages_recipient_read_idx").on(table.recipient_id, table.read_at),
 	]
 );
 

@@ -1,14 +1,21 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BookOpen,
+  Bell,
   Bot,
   LogIn,
   Menu,
   Newspaper,
+  Settings2,
   Shapes,
   ShieldCheck,
   Tags,
@@ -16,11 +23,14 @@ import {
 } from 'lucide-react';
 import { useApp } from './app-provider';
 import { AuthDialog } from './auth-dialog';
+import { AccountSettingsDialog } from './account-settings-dialog';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api';
 
 const navItems = [
   { href: '/chat/', label: 'Agent', icon: Bot },
   { href: '/sources/', label: '信息源', icon: Newspaper },
+  { href: '/messages/', label: '消息', icon: Bell },
 ];
 
 const adminNavItems = [
@@ -32,10 +42,133 @@ const adminNavItems = [
 
 export function Navigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, isLoading, logout } = useApp();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const navigatingRef = useRef(false);
+  const transitionTimerRef = useRef<number | null>(null);
+  const enterTimerRef = useRef<number | null>(null);
   const isAdmin = user?.role === 'admin';
+  const availableNavItems = user
+    ? navItems
+    : navItems.filter((item) => item.href !== '/messages/');
+
+  useLayoutEffect(() => {
+    const main = document.querySelector('main');
+    if (!main) return;
+
+    main.classList.remove('cczu-page-leave');
+    main.classList.remove('cczu-page-transition');
+    void main.offsetWidth;
+    main.classList.add('cczu-page-transition');
+    if (enterTimerRef.current) {
+      window.clearTimeout(enterTimerRef.current);
+    }
+    enterTimerRef.current = window.setTimeout(() => {
+      main.classList.remove('cczu-page-transition');
+      enterTimerRef.current = null;
+    }, 300);
+
+    return () => {
+      if (enterTimerRef.current) {
+        window.clearTimeout(enterTimerRef.current);
+        enterTimerRef.current = null;
+      }
+    };
+  }, [pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) {
+        window.clearTimeout(transitionTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadUnreadCount = async () => {
+      try {
+        const response = await apiFetch('/api/interactions/unread-count', {
+          cache: 'no-store',
+        });
+        const data = await response.json();
+        if (!cancelled && response.ok) {
+          setUnreadCount(Number(data?.unread_count || 0));
+        }
+      } catch {
+        // The unread badge is optional when the backend is unavailable.
+      }
+    };
+    const handleRefresh = () => {
+      void loadUnreadCount();
+    };
+
+    void loadUnreadCount();
+    const timer = window.setInterval(() => {
+      void loadUnreadCount();
+    }, 20_000);
+    window.addEventListener('cczu-interactions-updated', handleRefresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener(
+        'cczu-interactions-updated',
+        handleRefresh
+      );
+    };
+  }, [user]);
+
+  const handleNavClick = (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    href: string,
+    mobile: boolean
+  ) => {
+    if (mobile) setMobileOpen(false);
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      pathname === href
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    if (navigatingRef.current) return;
+
+    const main = document.querySelector('main');
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    if (!main || reduceMotion) {
+      router.push(href);
+      return;
+    }
+
+    navigatingRef.current = true;
+    main.classList.remove('cczu-page-transition');
+    main.classList.add('cczu-page-leave');
+    if (transitionTimerRef.current) {
+      window.clearTimeout(transitionTimerRef.current);
+    }
+    transitionTimerRef.current = window.setTimeout(() => {
+      router.push(href);
+      navigatingRef.current = false;
+      transitionTimerRef.current = null;
+    }, 130);
+  };
 
   const renderNavItem = (
     item: (typeof navItems)[number],
@@ -50,9 +183,7 @@ export function Navigation() {
         key={item.href}
         href={item.href}
         prefetch={false}
-        onClick={() => {
-          if (mobile) setMobileOpen(false);
-        }}
+        onClick={(event) => handleNavClick(event, item.href, mobile)}
         className={cn(
           mobile
             ? 'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium'
@@ -64,6 +195,19 @@ export function Navigation() {
       >
         <Icon className="h-4 w-4" />
         {item.label}
+        {item.href === '/messages/' && unreadCount > 0 && (
+          <span
+            className={cn(
+              'inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none',
+              active
+                ? 'bg-blue-600 text-white'
+                : 'bg-red-500 text-white'
+            )}
+            aria-label={`${unreadCount} 条未读消息`}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
       </Link>
     );
   };
@@ -91,7 +235,7 @@ export function Navigation() {
                   className="flex items-center gap-2"
                   aria-label="正在加载导航"
                 >
-                  {[56, 72, 64, 68, 72].map((width, index) => (
+                  {[56, 72, 64, 68, 72, 64].map((width, index) => (
                     <span
                       key={`${width}-${index}`}
                       className="h-7 animate-pulse rounded-md bg-slate-100"
@@ -101,7 +245,7 @@ export function Navigation() {
                 </div>
               ) : (
                 <>
-                  {navItems.map((item) => renderNavItem(item))}
+                  {availableNavItems.map((item) => renderNavItem(item))}
                   {isAdmin && (
                     <div className="mx-1 h-5 w-px bg-slate-200" />
                   )}
@@ -117,10 +261,24 @@ export function Navigation() {
               ) : user ? (
                 <>
                   {!isAdmin && (
-                    <span className="hidden rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 sm:inline">
+                    <button
+                      type="button"
+                      onClick={() => setAccountOpen(true)}
+                      className="hidden rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 sm:inline"
+                      title="账号设置"
+                    >
                       {user.display_name}
-                    </span>
+                    </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setAccountOpen(true)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    title="账号设置"
+                    aria-label="账号设置"
+                  >
+                    <Settings2 className="h-4 w-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => void logout()}
@@ -164,9 +322,10 @@ export function Navigation() {
                       className="mx-3 my-2 h-7 animate-pulse rounded-md bg-slate-100"
                     />
                   ))
-                : [...navItems, ...(isAdmin ? adminNavItems : [])].map(
-                    (item) => renderNavItem(item, true)
-                  )}
+                : [
+                    ...availableNavItems,
+                    ...(isAdmin ? adminNavItems : []),
+                  ].map((item) => renderNavItem(item, true))}
             </div>
           )}
         </div>
@@ -175,6 +334,10 @@ export function Navigation() {
       <AuthDialog
         open={authOpen}
         onClose={() => setAuthOpen(false)}
+      />
+      <AccountSettingsDialog
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
       />
     </>
   );

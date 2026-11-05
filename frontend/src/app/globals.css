@@ -192,6 +192,30 @@ body {
   }
 }
 
+@keyframes cczu-page-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes cczu-page-out {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+
+  to {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
 [data-slot='dialog-overlay'][data-state='open'] {
   animation: cczu-dialog-overlay-in 180ms ease-out both;
 }
@@ -212,6 +236,17 @@ body {
   animation: cczu-answer-card-reveal 240ms ease-out both;
 }
 
+.cczu-page-transition {
+  animation: cczu-page-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, filter;
+}
+
+.cczu-page-leave {
+  animation: cczu-page-out 130ms ease-in both;
+  pointer-events: none;
+  will-change: opacity, filter;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-slot='dialog-overlay'][data-state],
   [data-slot='dialog-content'][data-state] {
@@ -219,6 +254,11 @@ body {
   }
 
   .cczu-answer-card-reveal {
+    animation-duration: 1ms;
+  }
+
+  .cczu-page-transition,
+  .cczu-page-leave {
     animation-duration: 1ms;
   }
 }

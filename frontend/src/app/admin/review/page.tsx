@@ -1,20 +1,26 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ArrowDownAZ,
+  CalendarDays,
   CheckCircle2,
   Clock,
   Inbox,
   MapPin,
+  Search,
   Shapes,
   ShieldCheck,
   Tag as TagIcon,
   User,
+  Users,
   X,
   XCircle,
 } from 'lucide-react';
+import type { MonitoredUser } from '@cczu/shared';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
+import { formatDateTime } from '@/lib/format-date';
 
 interface SourceItem {
   id: string;
@@ -44,7 +50,8 @@ interface CatalogRequest {
   requested_by_profile: { display_name: string } | null;
 }
 
-type ReviewTab = 'sources' | 'tags' | 'types';
+type ReviewTab = 'sources' | 'tags' | 'types' | 'users';
+type UserSortMode = 'name' | 'created';
 type RejectTarget = {
   kind: 'source' | 'catalog';
   id: string;
@@ -63,6 +70,12 @@ export default function ReviewPage() {
   const [catalogRequests, setCatalogRequests] = useState<CatalogRequest[]>(
     []
   );
+  const [users, setUsers] = useState<MonitoredUser[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userSort, setUserSort] = useState<UserSortMode>('created');
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersOverallTotal, setUsersOverallTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<ReviewTab>('sources');
   const [selected, setSelected] = useState<SourceItem | null>(null);
@@ -72,6 +85,30 @@ export default function ReviewPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const params = new URLSearchParams({
+        search: userSearch,
+        sort: userSort,
+      });
+      const response = await apiFetch(`/api/review/users?${params}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || '获取用户列表失败');
+      }
+      setUsers(data.data || []);
+      setUsersTotal(Number(data?.total || 0));
+      setUsersOverallTotal(Number(data?.overall_total || 0));
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : '获取用户列表失败'
+      );
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [userSearch, userSort]);
 
   const fetchPending = async () => {
     setLoading(true);
@@ -103,6 +140,13 @@ export default function ReviewPage() {
   useEffect(() => {
     void fetchPending();
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchUsers();
+    }, userSearch ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchUsers, userSearch]);
 
   const approveSource = async (id: string) => {
     setActionLoading(true);
@@ -216,7 +260,7 @@ export default function ReviewPage() {
           审核后台
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          分别审核社区信息源、Tag 申请和信息源类型申请
+          审核社区内容与目录申请，并查看用户账号和互动情况
         </p>
       </div>
 
@@ -239,6 +283,12 @@ export default function ReviewPage() {
             label: '类型申请',
             count: typeRequests.length,
             icon: Shapes,
+          },
+          {
+            value: 'users' as const,
+            label: '用户监控',
+            count: usersOverallTotal,
+            icon: Users,
           },
         ].map((item) => {
           const Icon = item.icon;
@@ -280,7 +330,159 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {tab === 'sources' ? (
+      {tab === 'users' ? (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+                placeholder="搜索显示名称或用户名"
+                className="w-full rounded-lg border border-slate-300 py-2.5 pl-9 pr-9 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+              {userSearch && (
+                <button
+                  type="button"
+                  onClick={() => setUserSearch('')}
+                  className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="清空用户搜索"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="inline-flex w-fit rounded-lg bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setUserSort('name')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition',
+                  userSort === 'name'
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-slate-500'
+                )}
+              >
+                <ArrowDownAZ className="h-3.5 w-3.5" />
+                按名称
+              </button>
+              <button
+                type="button"
+                onClick={() => setUserSort('created')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition',
+                  userSort === 'created'
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-slate-500'
+                )}
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                按创建时间
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+            <span>共 {usersOverallTotal} 位用户</span>
+            <span>
+              {userSearch
+                ? `搜索到 ${usersTotal} 位`
+                : `当前显示 ${users.length} 位`}
+            </span>
+          </div>
+
+          {usersLoading ? (
+            <EmptyState text="正在加载用户列表..." />
+          ) : users.length === 0 ? (
+            <EmptyState
+              text={
+                userSearch
+                  ? '没有匹配的用户'
+                  : '当前还没有用户账号'
+              }
+            />
+          ) : (
+            <div className="space-y-3">
+              {users.map((monitoredUser) => (
+                <article
+                  key={monitoredUser.id}
+                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-sm font-semibold text-blue-700">
+                      {monitoredUser.display_name
+                        .slice(0, 1)
+                        .toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-slate-900">
+                          {monitoredUser.display_name}
+                        </h3>
+                        <span
+                          className={cn(
+                            'rounded px-2 py-0.5 text-[11px] font-medium',
+                            monitoredUser.role === 'admin'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-slate-100 text-slate-600'
+                          )}
+                        >
+                          {monitoredUser.role === 'admin'
+                            ? '管理员'
+                            : '普通用户'}
+                        </span>
+                        {monitoredUser.username && (
+                          <span className="text-xs text-slate-400">
+                            @{monitoredUser.username}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-400">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        创建于 {formatDateTime(monitoredUser.created_at)}
+                      </p>
+
+                      <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        {[
+                          {
+                            label: '发布信息源',
+                            value: monitoredUser.source_count,
+                          },
+                          {
+                            label: '已通过',
+                            value: monitoredUser.approved_source_count,
+                          },
+                          {
+                            label: '公开讨论',
+                            value: monitoredUser.comment_count,
+                          },
+                          {
+                            label: '发出私聊',
+                            value: monitoredUser.message_count,
+                          },
+                        ].map((metric) => (
+                          <div
+                            key={metric.label}
+                            className="rounded-lg bg-slate-50 px-3 py-2"
+                          >
+                            <dt className="text-[11px] text-slate-400">
+                              {metric.label}
+                            </dt>
+                            <dd className="mt-0.5 text-base font-semibold text-slate-700">
+                              {metric.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : tab === 'sources' ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-2 lg:col-span-1">
             {loading ? (
@@ -310,7 +512,7 @@ export default function ReviewPage() {
                   </h3>
                   <p className="mt-1 text-xs text-slate-400">
                     {source.profiles?.display_name} ·{' '}
-                    {new Date(source.created_at).toLocaleDateString('zh-CN')}
+                    {formatDateTime(source.created_at)}
                   </p>
                 </button>
               ))
@@ -462,17 +664,15 @@ function SourceDetail({
           icon={<ShieldCheck className="h-4 w-4 text-slate-400" />}
           label="联系方式"
           value={
-            source.contact_mode === 'platform'
-              ? '平台内联系'
-              : source.contact_mode === 'masked'
-                ? '打码显示'
-                : '公开'
+            source.contact_mode === 'public'
+              ? '公开'
+              : '平台内联系'
           }
         />
         <InfoLine
           icon={<Clock className="h-4 w-4 text-slate-400" />}
           label="发布时间"
-          value={new Date(source.created_at).toLocaleString('zh-CN')}
+          value={formatDateTime(source.created_at)}
         />
       </div>
       {source.source_tags && source.source_tags.length > 0 && (
@@ -536,7 +736,7 @@ function CatalogRequestCard({
           </p>
           <p className="mt-3 text-xs text-slate-400">
             申请人：{request.requested_by_profile?.display_name || '未知'} ·{' '}
-            {new Date(request.created_at).toLocaleString('zh-CN')}
+            {formatDateTime(request.created_at)}
           </p>
         </div>
       </div>

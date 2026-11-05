@@ -22,9 +22,13 @@ import type { SourceItem } from '@cczu/shared';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/components/app-provider';
 import { apiFetch } from '@/lib/api';
+import { formatDateTime } from '@/lib/format-date';
 import { AiAutoToggle } from '@/components/ai-auto-toggle';
 import { PermanentDeleteDialog } from '@/components/permanent-delete-dialog';
 import { TagMultiSelect } from '@/components/tag-multi-select';
+import { SourceDiscussion } from '@/components/source-discussion';
+import { SearchFilterBar } from '@/components/search-filter-bar';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -69,9 +73,44 @@ const STATUS_LABELS: Record<
   rejected: { label: '已驳回', color: 'bg-red-100 text-red-700' },
 };
 
-function formatDate(value: string | null) {
-  if (!value) return '未设置';
-  return new Date(value).toLocaleDateString('zh-CN');
+function formatDateTimeInputValue(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function getValidUntilError(
+  value: string,
+  publishedAtValue: string | Date
+) {
+  if (!value) return '';
+  const validUntil = new Date(value);
+  if (Number.isNaN(validUntil.getTime())) {
+    return '时间格式无效，请通过日期时间选择器输入有效时间。';
+  }
+  const publishedAt = new Date(publishedAtValue);
+  if (
+    Number.isNaN(publishedAt.getTime()) ||
+    validUntil.getTime() <= publishedAt.getTime()
+  ) {
+    return '有效期必须晚于发布时间。请选择发布时间之后的日期和时间；留空表示长期有效。';
+  }
+  return '';
 }
 
 interface SourceEditorProps {
@@ -101,11 +140,18 @@ function SourceEditor({
   const [formLocation, setFormLocation] = useState(
     editingSource?.location || ''
   );
+  const [formValidUntil, setFormValidUntil] = useState(
+    formatDateTimeInputValue(editingSource?.valid_until || null)
+  );
+  const [validUntilError, setValidUntilError] = useState('');
   const [formContactMode, setFormContactMode] = useState(
-    editingSource?.contact_mode || 'platform'
+    editingSource?.contact_mode === 'public' ? 'public' : 'platform'
   );
   const [formContactValue, setFormContactValue] = useState(
     editingSource?.contact_value || ''
+  );
+  const [allowDiscussion, setAllowDiscussion] = useState(
+    editingSource?.allow_discussion || false
   );
   const [formTagIds, setFormTagIds] = useState<string[]>(
     editingSource?.source_tags?.map((item) => item.tag_id) || []
@@ -312,6 +358,20 @@ function SourceEditor({
       setError('请填写标题、正文并选择类型');
       return;
     }
+    if (formValidUntil) {
+      const publishedAt = editingSource
+        ? new Date(editingSource.created_at)
+        : new Date();
+      const validationError = getValidUntilError(
+        formValidUntil,
+        publishedAt
+      );
+      if (validationError) {
+        setValidUntilError(validationError);
+        setError('');
+        return;
+      }
+    }
     setSubmitting(true);
     setError('');
 
@@ -328,8 +388,10 @@ function SourceEditor({
             content: formContent,
             type: formType,
             location: formLocation || null,
+            valid_until: formValidUntil || null,
             contact_mode: formContactMode,
             contact_value: formContactValue || null,
+            allow_discussion: allowDiscussion,
             tag_ids: formTagIds,
           }),
         }
@@ -342,11 +404,16 @@ function SourceEditor({
         editingSource ? '修改已保存' : '信息源已保存为草稿'
       );
     } catch (requestError) {
-      setError(
+      const message =
         requestError instanceof Error
           ? requestError.message
-          : '保存信息源失败'
-      );
+          : '保存信息源失败';
+      if (message.includes('有效期')) {
+        setValidUntilError(message);
+        setError('');
+      } else {
+        setError(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -488,6 +555,51 @@ function SourceEditor({
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            有效期至
+          </label>
+          <input
+            type="datetime-local"
+            value={formValidUntil}
+            onChange={(event) => {
+              const value = event.target.value;
+              setFormValidUntil(value);
+              setValidUntilError(
+                getValidUntilError(
+                  value,
+                  editingSource?.created_at || new Date()
+                )
+              );
+            }}
+            min={formatDateTimeInputValue(
+              editingSource?.created_at || new Date().toISOString()
+            )}
+            aria-invalid={Boolean(validUntilError)}
+            aria-describedby={
+              validUntilError ? 'valid-until-error' : undefined
+            }
+            className={cn(
+              'w-full rounded-lg border px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:ring-2',
+              validUntilError
+                ? 'border-red-300 bg-red-50/40 focus:border-red-500 focus:ring-red-100'
+                : 'border-slate-300 focus:border-blue-500 focus:ring-blue-100'
+            )}
+          />
+          {validUntilError ? (
+            <p
+              id="valid-until-error"
+              className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700"
+            >
+              {validUntilError}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-xs text-slate-400">
+              可选填；留空表示长期有效，填写时必须晚于发布时间。
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
             联系方式展示
           </label>
           <select
@@ -496,7 +608,6 @@ function SourceEditor({
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           >
             <option value="platform">平台内联系</option>
-            <option value="masked">打码显示</option>
             <option value="public">公开显示（需确认）</option>
           </select>
           {formContactMode === 'public' && (
@@ -509,6 +620,22 @@ function SourceEditor({
               placeholder="微信号或手机号"
             />
           )}
+        </div>
+
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div>
+            <div className="text-sm font-medium text-slate-700">
+              允许公开讨论回复
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              开启后，信息源会显示“可回复”，其他用户可公开讨论；私聊始终仅双方可见。
+            </p>
+          </div>
+          <Switch
+            checked={allowDiscussion}
+            onCheckedChange={setAllowDiscussion}
+            aria-label="允许公开讨论回复"
+          />
         </div>
 
         <div>
@@ -609,6 +736,11 @@ export default function SourcesPage() {
   const [sourceTypes, setSourceTypes] = useState<SourceType[]>([]);
   const [period, setPeriod] = useState<Period>('all');
   const [filterTagIds, setFilterTagIds] = useState<string[]>([]);
+  const [tagFilterMode, setTagFilterMode] = useState<'or' | 'and'>('or');
+  const [sortMode, setSortMode] = useState<'time' | 'tag_match'>('time');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [matchTitle, setMatchTitle] = useState(true);
+  const [matchContent, setMatchContent] = useState(true);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
   const [notice, setNotice] = useState<{
@@ -634,8 +766,19 @@ export default function SourcesPage() {
       const search = new URLSearchParams();
       if (tab === 'mine') search.set('status', 'mine');
       search.set('period', period);
+      search.set('sort', sortMode);
+      if (searchQuery.trim()) {
+        search.set('search', searchQuery.trim());
+        search.set(
+          'search_fields',
+          [matchTitle ? 'title' : '', matchContent ? 'content' : '']
+            .filter(Boolean)
+            .join(',')
+        );
+      }
       if (filterTagIds.length > 0) {
         search.set('tag_ids', filterTagIds.join(','));
+        search.set('tag_mode', tagFilterMode);
       }
       const response = await apiFetch(
         `/api/sources?${search.toString()}`
@@ -655,11 +798,29 @@ export default function SourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, period, filterTagIds]);
+  }, [
+    tab,
+    period,
+    filterTagIds,
+    tagFilterMode,
+    sortMode,
+    searchQuery,
+    matchTitle,
+    matchContent,
+  ]);
 
   useEffect(() => {
-    void fetchSources();
-  }, [fetchSources]);
+    const timer = window.setTimeout(() => {
+      void fetchSources();
+    }, searchQuery ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchSources, searchQuery]);
+
+  useEffect(() => {
+    if (filterTagIds.length === 0 && sortMode === 'tag_match') {
+      setSortMode('time');
+    }
+  }, [filterTagIds, sortMode]);
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -891,6 +1052,22 @@ export default function SourcesPage() {
               </button>
             </div>
 
+            <div className="mb-4">
+              <SearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="搜索信息源标题或正文"
+                primaryLabel="标题"
+                secondaryLabel="内容"
+                matchPrimary={matchTitle}
+                matchSecondary={matchContent}
+                onScopeChange={(scope) => {
+                  setMatchTitle(scope.matchPrimary);
+                  setMatchContent(scope.matchSecondary);
+                }}
+              />
+            </div>
+
             <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                 <div className="shrink-0">
@@ -928,6 +1105,23 @@ export default function SourcesPage() {
                         </span>
                       )}
                     </div>
+                    <div className="inline-flex rounded-md bg-slate-100 p-0.5">
+                      {(['or', 'and'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTagFilterMode(mode)}
+                          className={cn(
+                            'rounded px-2.5 py-1 text-[11px] font-semibold transition',
+                            tagFilterMode === mode
+                              ? 'bg-white text-blue-700 shadow-sm'
+                              : 'text-slate-400 hover:text-slate-600'
+                          )}
+                        >
+                          {mode.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <TagMultiSelect
                     tags={tags}
@@ -940,13 +1134,58 @@ export default function SourcesPage() {
                     }
                     disabled={tags.length === 0}
                   />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-slate-500">
+                      排序
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('time')}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition',
+                        sortMode === 'time'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      )}
+                    >
+                      <Clock3 className="h-3.5 w-3.5" />
+                      按时间排序
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('tag_match')}
+                      disabled={filterTagIds.length === 0}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition',
+                        sortMode === 'tag_match'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                        filterTagIds.length === 0 &&
+                          'cursor-not-allowed opacity-40'
+                      )}
+                    >
+                      <TagIcon className="h-3.5 w-3.5" />
+                      按标签匹配度排序
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
               <span>{loading ? '正在加载...' : `共 ${sources.length} 条`}</span>
-              <span>支持多个 Tag 同时筛选，匹配任一即可显示</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span>
+                  {sortMode === 'time'
+                    ? '按时间排序：最新优先'
+                    : '按命中 Tag 数量优先，额外 Tag 越少越靠前'}
+                </span>
+                <span>
+                  {tagFilterMode === 'or'
+                    ? 'OR：匹配任一选中 Tag 即显示'
+                    : 'AND：必须包含全部选中 Tag'}
+                </span>
+              </div>
             </div>
           </>
         )}
@@ -1012,6 +1251,16 @@ export default function SourcesPage() {
                           {STATUS_LABELS[source.status]?.label ||
                             source.status}
                         </span>
+                        {source.allow_discussion && (
+                          <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            可回复
+                          </span>
+                        )}
+                        {source.is_expired && (
+                          <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                            已过期
+                          </span>
+                        )}
                         {source.knowledge_item_id && (
                           <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
                             <BookOpen className="h-3 w-3" />
@@ -1076,7 +1325,7 @@ export default function SourcesPage() {
 
                   <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
                     <span>{source.profiles?.display_name || '匿名用户'}</span>
-                    <span>{formatDate(source.created_at)}</span>
+                    <span>发布于 {formatDateTime(source.created_at)}</span>
                     {source.location && (
                       <span className="inline-flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
@@ -1130,6 +1379,16 @@ export default function SourcesPage() {
                     {STATUS_LABELS[selectedSource.status]?.label ||
                       selectedSource.status}
                   </span>
+                  {selectedSource.allow_discussion && (
+                    <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      可回复
+                    </span>
+                  )}
+                  {selectedSource.is_expired && (
+                    <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      已过期
+                    </span>
+                  )}
                   {selectedSource.knowledge_item_id && (
                     <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
                       <BookOpen className="h-3 w-3" />
@@ -1145,7 +1404,7 @@ export default function SourcesPage() {
                     {selectedSource.profiles?.display_name || '匿名用户'}
                   </span>
                   <span>
-                    发布于 {formatDate(selectedSource.created_at)}
+                    发布于 {formatDateTime(selectedSource.created_at)}
                   </span>
                   {selectedSource.location && (
                     <span>{selectedSource.location}</span>
@@ -1162,16 +1421,18 @@ export default function SourcesPage() {
                   <div>
                     <dt className="text-xs text-slate-400">有效期至</dt>
                     <dd className="mt-1 text-slate-700">
-                      {formatDate(selectedSource.valid_until)}
+                      {selectedSource.valid_until
+                        ? formatDateTime(selectedSource.valid_until)
+                        : '长期有效'}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-slate-400">联系方式</dt>
                     <dd className="mt-1 text-slate-700">
                       {selectedSource.contact_value ||
-                        (selectedSource.contact_mode === 'platform'
-                          ? '平台内联系'
-                          : '已隐藏')}
+                        (selectedSource.contact_mode === 'public'
+                          ? '已隐藏'
+                          : '平台内联系')}
                     </dd>
                   </div>
                 </dl>
@@ -1194,6 +1455,16 @@ export default function SourcesPage() {
                     驳回原因：{selectedSource.reject_reason}
                   </div>
                 )}
+
+                <SourceDiscussion
+                  sourceId={selectedSource.id}
+                  sourceOwnerId={selectedSource.created_by}
+                  sourceOwnerName={
+                    selectedSource.profiles?.display_name || '信息源作者'
+                  }
+                  sourceStatus={selectedSource.status}
+                  allowDiscussion={selectedSource.allow_discussion}
+                />
 
                 <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
                   {user?.role === 'admin' &&

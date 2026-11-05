@@ -36,6 +36,34 @@
       "when": 1793864989251,
       "tag": "0004_lazy_leopardon",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793886023682,
+      "tag": "0005_large_reptil",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793889700079,
+      "tag": "0006_grey_deathbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793894168428,
+      "tag": "0007_interaction-reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793897664386,
+      "tag": "0008_display-name-unique",
+      "breakpoints": true
     }
   ]
 }

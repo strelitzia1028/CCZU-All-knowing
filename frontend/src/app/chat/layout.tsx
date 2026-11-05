@@ -11,7 +11,7 @@ export default function ChatLayout({
   return (
     <div className="min-h-screen bg-slate-50">
       <Navigation />
-      <main>{children}</main>
+      <main className="cczu-page-transition">{children}</main>
     </div>
   );
 }

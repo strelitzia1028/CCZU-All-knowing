@@ -1,8 +1,5 @@
 import { query } from './db.js'
-import {
-  sanitizeKnowledgeContent,
-  stripDemoMarker,
-} from './anti-injection.js'
+import { sanitizeKnowledgeContent } from './anti-injection.js'
 import {
   createMatchProfiles,
   rankWithProfiles,
@@ -122,9 +119,7 @@ export async function searchKnowledgeDetailed({
         id: item.id,
         title: item.title,
         content: item.content,
-        sanitized_content: stripDemoMarker(
-          sanitizeKnowledgeContent(item.content)
-        ),
+        sanitized_content: sanitizeKnowledgeContent(item.content),
         source_level: item.source_level,
         review_status: item.review_status,
         updated_at:

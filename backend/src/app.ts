@@ -7,6 +7,8 @@ import express, {
 import { appConfig } from './config.js';
 import { isDbConfigured, query } from './db.js';
 import { chatRouter } from './routes/chat.js';
+import { discussionsRouter } from './routes/discussions.js';
+import { interactionsRouter } from './routes/interactions.js';
 import { authRouter } from './routes/auth.js';
 import { knowledgeRouter } from './routes/knowledge.js';
 import { reviewRouter } from './routes/review.js';
@@ -64,6 +66,8 @@ export function createApp() {
   app.use('/api/switch-role', switchRoleRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/tags', tagsRouter);
+  app.use('/api/interactions', interactionsRouter);
+  app.use('/api', discussionsRouter);
   app.use('/api/knowledge', knowledgeRouter);
   app.use('/api/sources', sourcesRouter);
   app.use('/api/source-types', sourceTypesRouter);

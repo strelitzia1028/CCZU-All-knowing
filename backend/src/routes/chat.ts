@@ -116,9 +116,28 @@ chatRouter.post(
       }
 
       const stream = streamChat(buildAgentMessages(context, message));
+      let answerText = '';
 
       for await (const chunk of stream) {
+        answerText += chunk;
         writeEvent({ type: 'chunk', content: chunk });
+      }
+
+      const expiredSources = context.communitySources.filter(
+        (source) => source.is_expired
+      );
+      if (
+        expiredSources.length > 0 &&
+        !/(过期|失效|有效期)/.test(answerText)
+      ) {
+        const titles = expiredSources
+          .slice(0, 3)
+          .map((source) => `「${source.title}」`)
+          .join('、');
+        writeEvent({
+          type: 'chunk',
+          content: `\n\n注意：${titles}已超过有效期，排序时已降权。建议先联系发布者确认现状后再使用。`,
+        });
       }
 
       writeEvent({ type: 'done' });

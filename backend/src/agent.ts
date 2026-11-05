@@ -1,8 +1,5 @@
 import { query } from './db.js'
-import {
-  sanitizeKnowledgeContent,
-  stripDemoMarker,
-} from './anti-injection.js'
+import { sanitizeKnowledgeContent } from './anti-injection.js'
 import {
   SEARCH_MATCH_THRESHOLD,
   searchKnowledgeDetailed,
@@ -75,6 +72,10 @@ interface SourceSearchRow {
   content: string
   type: string
   location: string | null
+  valid_until: Date | string | null
+  is_expired: boolean
+  created_by: string
+  allow_discussion: boolean
   created_at: Date | string
   display_name: string | null
   source_tags: Array<{
@@ -135,8 +136,14 @@ export interface CommunitySourceResult {
   type: string
   type_label: string
   location: string | null
+  valid_until: string | null
+  is_expired: boolean
+  overall_match?: number
+  tag_match?: number
   created_at: string
   author: string
+  created_by: string
+  allow_discussion: boolean
   tags: Array<{ id: string; name: string; description?: string | null }>
 }
 
@@ -701,6 +708,10 @@ async function searchCommunitySources(
        s.content,
        s.type,
        s.location,
+       s.valid_until,
+       (s.valid_until IS NOT NULL AND s.valid_until <= NOW()) AS is_expired,
+       s.created_by,
+       s.allow_discussion,
        s.created_at,
        p.display_name,
        COALESCE(
@@ -758,6 +769,7 @@ async function searchCommunitySources(
       title: row.title,
       content: row.content,
       location: row.location,
+      expired: row.is_expired,
       tagNames: tags.map((tag) => tag.name),
       descriptionText: [
         ...tags.map((tag) => tag.description || ''),
@@ -770,18 +782,25 @@ async function searchCommunitySources(
         title: row.title,
         content: sanitizeKnowledgeContent(row.content),
         excerpt:
-          stripDemoMarker(sanitizeKnowledgeContent(row.content))
+          sanitizeKnowledgeContent(row.content)
             .replace(/\s+/g, ' ')
             .slice(0, 180) +
           (row.content.length > 180 ? '...' : ''),
         type: row.type,
         type_label: typeLabelMap.get(row.type) || row.type,
         location: row.location,
+        valid_until:
+          row.valid_until instanceof Date
+            ? row.valid_until.toISOString()
+            : row.valid_until,
+        is_expired: row.is_expired,
         created_at:
           row.created_at instanceof Date
             ? row.created_at.toISOString()
             : row.created_at,
         author: row.display_name || '社区用户',
+        created_by: row.created_by,
+        allow_discussion: row.allow_discussion,
         tags,
       },
     }
@@ -802,7 +821,11 @@ async function searchCommunitySources(
 
   return {
     results: ranked.matches.map(
-      (match: RankedCandidate<SourceCandidate>) => match.item.result
+      (match: RankedCandidate<SourceCandidate>) => ({
+        ...match.item.result,
+        overall_match: match.score,
+        tag_match: match.tagMatch,
+      })
     ),
     attempts: ranked.attempts,
   }
@@ -1531,7 +1554,7 @@ function formatCommunityResults(results: CommunitySourceResult[]): string {
   return results
     .map(
       (item, index) =>
-        `[社区${index + 1}] ${item.title}\n类型：${item.type_label}\n发布时间：${item.created_at}\n地点：${item.location || '未填写'}\n发布者：${item.author}\n内容：${item.content.slice(0, 3000)}`
+        `[社区${index + 1}] ${item.title}\n类型：${item.type_label}\n发布时间：${item.created_at}\n地点：${item.location || '未填写'}\n发布者：${item.author}\n有效期：${item.valid_until || '长期有效'}\n状态：${item.is_expired ? '已过期（排序权重已降级）' : '有效'}\n匹配度：${typeof item.overall_match === 'number' ? `${item.overall_match}%` : '未知'}\n内容：${item.content.slice(0, 3000)}`
     )
     .join('\n---\n')
 }
@@ -1609,7 +1632,7 @@ ${resultSections.join('\n\n')}
 回答要求：
 1. 先给结论，再给 1 至 3 条可执行信息。
 2. 引用时使用 [知识1] 或 [社区1] 标注。
-3. 发布时间超过 90 天的社区内容要提醒可能过期。
+3. 发布时间超过 90 天或状态为“已过期”的社区内容必须明确提醒用户，建议先通过讨论或私聊确认是否仍有效；不得把过期内容表述为当前仍然有效。
 4. 检索到内容不等于已经联系、发布或修改成功。
 5. 如果用户是在修订草稿，明确说明“已更新上一份草稿”，不要说成新建无关内容。${draftInstruction}`
 }

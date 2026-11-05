@@ -16,6 +16,7 @@ import {
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { PermanentDeleteDialog } from '@/components/permanent-delete-dialog';
+import { SearchFilterBar } from '@/components/search-filter-bar';
 
 interface SourceType {
   id: string;
@@ -40,6 +41,9 @@ export default function SourceTypesPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [sortMode, setSortMode] = useState<'created' | 'name'>('created');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [matchName, setMatchName] = useState(true);
+  const [matchDescription, setMatchDescription] = useState(true);
 
   const fetchTypes = async () => {
     setLoading(true);
@@ -164,15 +168,29 @@ export default function SourceTypesPage() {
     }
   };
 
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase('zh-CN');
+  const searchedTypes = normalizedSearch
+    ? types.filter(
+        (sourceType) =>
+          (matchName &&
+            sourceType.label
+              .toLocaleLowerCase('zh-CN')
+              .includes(normalizedSearch)) ||
+          (matchDescription &&
+            (sourceType.description || '')
+              .toLocaleLowerCase('zh-CN')
+              .includes(normalizedSearch))
+      )
+    : types;
   const visibleTypes =
     sortMode === 'name'
-      ? [...types].sort((left, right) =>
+      ? [...searchedTypes].sort((left, right) =>
           left.label.localeCompare(right.label, 'zh-CN', {
             numeric: true,
             sensitivity: 'base',
           })
         )
-      : [...types].sort(
+      : [...searchedTypes].sort(
           (left, right) =>
             Date.parse(left.created_at) - Date.parse(right.created_at)
         );
@@ -353,6 +371,22 @@ export default function SourceTypesPage() {
         </div>
       )}
 
+      <div className="mb-4">
+        <SearchFilterBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="搜索类型名称或描述"
+          primaryLabel="名称"
+          secondaryLabel="描述"
+          matchPrimary={matchName}
+          matchSecondary={matchDescription}
+          onScopeChange={(scope) => {
+            setMatchName(scope.matchPrimary);
+            setMatchDescription(scope.matchSecondary);
+          }}
+        />
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="w-full">
           <thead className="border-b border-slate-200 bg-slate-50">
@@ -371,10 +405,10 @@ export default function SourceTypesPage() {
                   加载中...
                 </td>
               </tr>
-            ) : types.length === 0 ? (
+            ) : visibleTypes.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-10 text-center text-slate-400">
-                  暂无类型
+                  {searchQuery ? '没有匹配的类型' : '暂无类型'}
                 </td>
               </tr>
             ) : (

@@ -1,0 +1,1 @@
+ALTER TABLE "knowledge_items" ADD COLUMN "source_type" varchar(30);

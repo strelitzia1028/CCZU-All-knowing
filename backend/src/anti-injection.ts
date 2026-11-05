@@ -30,10 +30,3 @@ export function sanitizeKnowledgeContent(content: string): string {
 
   return sanitized;
 }
-
-/**
- * Strip the "【示例数据，需替换】" marker from content for display in LLM context.
- */
-export function stripDemoMarker(content: string): string {
-  return content.replace(/^【示例数据，需替换】\n?/, '');
-}

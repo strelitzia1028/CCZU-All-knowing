@@ -6,6 +6,11 @@ import {
   suggestSourceType,
   summarizeSourceContent,
 } from '../llm.js';
+import {
+  buildLikePattern,
+  normalizeSearchTerm,
+  parseSearchFields,
+} from '../search-query.js';
 
 interface SourceTypeRow {
   id: string;
@@ -29,15 +34,26 @@ sourceTypesRouter.get(
           .json({ error: '未登录或会话已过期' });
       }
 
+      const searchTerm = normalizeSearchTerm(request.query.search);
+      const searchPattern = buildLikePattern(searchTerm);
+      const searchFields = parseSearchFields(request.query.search_fields, [
+        'name',
+        'description',
+      ] as const);
       const rows = await query<SourceTypeRow>(
         `SELECT id, value, label, description, status, created_at
          FROM source_types
-         WHERE $1 = 'admin' OR status = 'active'
+         WHERE ($1 = 'admin' OR status = 'active')
+           AND (
+             $2::text = ''
+             OR ${searchFields.has('name') ? `label ILIKE $3 ESCAPE '\\'` : 'FALSE'}
+             OR ${searchFields.has('description') ? `COALESCE(description, '') ILIKE $3 ESCAPE '\\'` : 'FALSE'}
+           )
          ORDER BY
            CASE WHEN status = 'active' THEN 0 ELSE 1 END,
            created_at ASC
          LIMIT 100`,
-        [user.role]
+        [user.role, searchTerm, searchPattern]
       );
       return response.json({ data: rows });
     } catch (error) {

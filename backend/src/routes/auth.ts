@@ -12,6 +12,7 @@ import { hashPassword, safeStringEqual, verifyPassword } from '../password.js';
 import {
   getCurrentUser,
   getUserByRole,
+  requireUser,
 } from '../session.js';
 import type { Role, SessionUser } from '@cczu/shared';
 
@@ -29,6 +30,21 @@ function normalizeUsername(value: unknown): string {
 
 function normalizeDisplayName(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function passwordValidationError(password: string): string | null {
+  return password.length < 8 || password.length > 72
+    ? '密码需为 8 到 72 个字符'
+    : null;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === '23505'
+  );
 }
 
 function toSessionUser(row: ProfileRow): SessionUser {
@@ -72,20 +88,38 @@ authRouter.post(
           error: '昵称需为 2 到 32 个字符',
         });
       }
-      if (password.length < 8 || password.length > 72) {
-        return response.status(400).json({
-          error: '密码需为 8 到 72 个字符',
-        });
+      const passwordError = passwordValidationError(password);
+      if (passwordError) {
+        return response.status(400).json({ error: passwordError });
+      }
+
+      const duplicateName = await query<{ id: string }>(
+        `SELECT id
+         FROM profiles
+         WHERE lower(display_name) = lower($1)
+         LIMIT 1`,
+        [displayName]
+      );
+      if (duplicateName[0]) {
+        return response.status(409).json({ error: '该名称已被使用' });
       }
 
       const passwordHash = await hashPassword(password);
-      const rows = await query<ProfileRow>(
-        `INSERT INTO profiles
-           (id, username, display_name, role, password_hash)
-         VALUES ($1, $2, $3, 'user', $4)
-         RETURNING id, username, display_name, role, password_hash`,
-        [crypto.randomUUID(), username, displayName, passwordHash]
-      );
+      let rows: ProfileRow[];
+      try {
+        rows = await query<ProfileRow>(
+          `INSERT INTO profiles
+             (id, username, display_name, role, password_hash)
+           VALUES ($1, $2, $3, 'user', $4)
+           RETURNING id, username, display_name, role, password_hash`,
+          [crypto.randomUUID(), username, displayName, passwordHash]
+        );
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          return response.status(409).json({ error: '名称或用户名已被使用' });
+        }
+        throw error;
+      }
 
       return authResponse(response, toSessionUser(rows[0]));
     } catch (error) {
@@ -148,6 +182,124 @@ authRouter.post(
       return authResponse(response, await getUserByRole('admin'));
     } catch (error) {
       return sendApiError(response, error, '管理员登录失败');
+    }
+  })
+);
+
+authRouter.patch(
+  '/profile',
+  asyncRoute(async (request, response) => {
+    try {
+      const currentUser = await requireUser(request);
+      const displayName = normalizeDisplayName(request.body?.display_name);
+      if (displayName.length < 2 || displayName.length > 32) {
+        return response
+          .status(400)
+          .json({ error: '名称需为 2 到 32 个字符' });
+      }
+
+      const duplicate = await query<{ id: string }>(
+        `SELECT id
+         FROM profiles
+         WHERE lower(display_name) = lower($1)
+           AND id <> $2
+         LIMIT 1`,
+        [displayName, currentUser.id]
+      );
+      if (duplicate[0]) {
+        return response.status(409).json({ error: '该名称已被使用' });
+      }
+
+      let rows: ProfileRow[];
+      try {
+        rows = await query<ProfileRow>(
+          `UPDATE profiles
+           SET display_name = $1
+           WHERE id = $2
+           RETURNING id, username, display_name, role, password_hash`,
+          [displayName, currentUser.id]
+        );
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          return response.status(409).json({ error: '该名称已被使用' });
+        }
+        throw error;
+      }
+      if (!rows[0]) {
+        return response.status(404).json({ error: '用户不存在' });
+      }
+      return response.json({ user: toSessionUser(rows[0]) });
+    } catch (error) {
+      return sendApiError(response, error, '更新显示名称失败');
+    }
+  })
+);
+
+authRouter.patch(
+  '/password',
+  asyncRoute(async (request, response) => {
+    try {
+      const currentUser = await requireUser(request);
+      const currentPassword =
+        typeof request.body?.current_password === 'string'
+          ? request.body.current_password
+          : '';
+      const newPassword =
+        typeof request.body?.new_password === 'string'
+          ? request.body.new_password
+          : '';
+      const confirmPassword =
+        typeof request.body?.confirm_password === 'string'
+          ? request.body.confirm_password
+          : '';
+
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        return response
+          .status(400)
+          .json({ error: '请填写原密码、新密码和确认新密码' });
+      }
+      const passwordError = passwordValidationError(newPassword);
+      if (passwordError) {
+        return response.status(400).json({ error: passwordError });
+      }
+      if (newPassword !== confirmPassword) {
+        return response
+          .status(400)
+          .json({ error: '新密码与确认新密码不一致' });
+      }
+      if (newPassword === currentPassword) {
+        return response
+          .status(400)
+          .json({ error: '新密码不能与原密码相同' });
+      }
+
+      const profiles = await query<{ password_hash: string | null }>(
+        `SELECT password_hash
+         FROM profiles
+         WHERE id = $1
+         LIMIT 1`,
+        [currentUser.id]
+      );
+      if (
+        !profiles[0] ||
+        !(await verifyPassword(
+          currentPassword,
+          profiles[0].password_hash
+        ))
+      ) {
+        return response.status(400).json({ error: '原密码不正确' });
+      }
+
+      const passwordHash = await hashPassword(newPassword);
+      await query(
+        `UPDATE profiles
+         SET password_hash = $1
+         WHERE id = $2`,
+        [passwordHash, currentUser.id]
+      );
+      return response.json({ success: true });
+    } catch (error) {
+      return sendApiError(response, error, '修改密码失败');
     }
   })
 );

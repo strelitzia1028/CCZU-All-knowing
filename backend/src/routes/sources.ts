@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { asyncRoute, sendApiError } from '../http.js';
 import { query, withTransaction } from '../db.js';
 import { requireAdmin, requireUser } from '../session.js';
+import {
+  buildLikePattern,
+  normalizeSearchTerm,
+  parseSearchFields,
+} from '../search-query.js';
 
 interface SourceRow {
   [key: string]: unknown;
@@ -11,7 +16,12 @@ interface SourceRow {
   type: string;
   status: string;
   created_by: string;
+  allow_discussion: boolean;
+  created_at: string | Date;
 }
+
+type TagFilterMode = 'or' | 'and';
+type SourceSortMode = 'time' | 'tag_match';
 
 const SOURCE_PERIOD_SQL = `
   (
@@ -78,6 +88,14 @@ function parseTagIds(value: unknown): string[] {
   ].slice(0, 20);
 }
 
+function normalizeTagMode(value: unknown): TagFilterMode {
+  return value === 'and' ? 'and' : 'or';
+}
+
+function normalizeSortMode(value: unknown): SourceSortMode {
+  return value === 'tag_match' ? 'tag_match' : 'time';
+}
+
 async function getRawSource(id: string): Promise<SourceRow | null> {
   const rows = await query<SourceRow>(
     `SELECT *
@@ -109,7 +127,9 @@ async function getSourceWithRelations(
          ELSE NULL
        END AS contact_value,
        s.valid_until,
+       (s.valid_until IS NOT NULL AND s.valid_until <= NOW()) AS is_expired,
        s.location,
+       s.allow_discussion,
        s.status,
        s.reject_reason,
        s.created_by,
@@ -148,6 +168,14 @@ sourcesRouter.get(
       const filter = requestedFilter === 'mine' ? 'mine' : 'all';
       const period = normalizePeriod(request.query.period);
       const tagIds = parseTagIds(request.query.tag_ids);
+      const tagMode = normalizeTagMode(request.query.tag_mode);
+      const sortMode = normalizeSortMode(request.query.sort);
+      const searchTerm = normalizeSearchTerm(request.query.search);
+      const searchPattern = buildLikePattern(searchTerm);
+      const searchFields = parseSearchFields(request.query.search_fields, [
+        'title',
+        'content',
+      ] as const);
 
       const rows = await query<Record<string, unknown>>(
         `SELECT
@@ -158,12 +186,25 @@ sourcesRouter.get(
            s.contact_mode,
            ${CONTACT_VALUE_SQL},
            s.valid_until,
+           (s.valid_until IS NOT NULL AND s.valid_until <= NOW()) AS is_expired,
            s.location,
+           s.allow_discussion,
            s.status,
            s.reject_reason,
            s.created_by,
            s.created_at,
            s.updated_at,
+           (
+             SELECT count(DISTINCT st_match.tag_id)::int
+             FROM source_tags st_match
+             WHERE st_match.source_id = s.id
+               AND st_match.tag_id = ANY($4::varchar[])
+           ) AS matched_tag_count,
+           (
+             SELECT count(DISTINCT st_all.tag_id)::int
+             FROM source_tags st_all
+             WHERE st_all.source_id = s.id
+           ) AS source_tag_count,
            CASE
              WHEN p.id IS NULL THEN NULL
              ELSE json_build_object('display_name', p.display_name)
@@ -185,17 +226,71 @@ sourcesRouter.get(
          AND ${SOURCE_PERIOD_SQL}
          AND (
            cardinality($4::varchar[]) = 0
-           OR EXISTS (
-             SELECT 1
-             FROM source_tags st2
-             WHERE st2.source_id = s.id
-               AND st2.tag_id = ANY($4::varchar[])
+           OR (
+             $6::text = 'or'
+             AND EXISTS (
+               SELECT 1
+               FROM source_tags st2
+               WHERE st2.source_id = s.id
+                 AND st2.tag_id = ANY($4::varchar[])
+             )
+           )
+           OR (
+             $6::text = 'and'
+             AND (
+               SELECT count(DISTINCT st2.tag_id)
+               FROM source_tags st2
+               WHERE st2.source_id = s.id
+                 AND st2.tag_id = ANY($4::varchar[])
+             ) = cardinality($4::varchar[])
            )
          )
+         AND (
+           $8::text = ''
+           OR ${searchFields.has('title') ? `s.title ILIKE $9 ESCAPE '\\'` : 'FALSE'}
+           OR ${searchFields.has('content') ? `s.content ILIKE $9 ESCAPE '\\'` : 'FALSE'}
+         )
          GROUP BY s.id, p.id, ki.id
-         ORDER BY s.created_at DESC
+         ORDER BY
+           CASE
+             WHEN $7::text = 'tag_match'
+              AND cardinality($4::varchar[]) > 0
+             THEN (
+               SELECT count(DISTINCT st_order.tag_id)
+               FROM source_tags st_order
+               WHERE st_order.source_id = s.id
+                 AND st_order.tag_id = ANY($4::varchar[])
+             )
+             ELSE 0
+           END DESC,
+           CASE
+             WHEN $7::text = 'tag_match'
+              AND cardinality($4::varchar[]) > 0
+             THEN (
+               SELECT count(DISTINCT st_all_order.tag_id)
+               FROM source_tags st_all_order
+               WHERE st_all_order.source_id = s.id
+             ) - (
+               SELECT count(DISTINCT st_match_order.tag_id)
+               FROM source_tags st_match_order
+               WHERE st_match_order.source_id = s.id
+                 AND st_match_order.tag_id = ANY($4::varchar[])
+             )
+             ELSE 0
+           END ASC,
+           s.created_at DESC
          LIMIT 200`,
-        [filter, user.id, period, tagIds, user.role]
+        [
+          filter,
+          user.id,
+          period,
+          tagIds,
+          user.role,
+          tagMode,
+          sortMode,
+          searchTerm,
+          searchPattern,
+        ]
       );
       return response.json({ data: rows });
     } catch (error) {
@@ -250,32 +345,52 @@ sourcesRouter.post(
           .json({ error: '信息源类型不存在或已停用' });
       }
 
+      const requestedValidUntil =
+        typeof request.body?.valid_until === 'string' &&
+        request.body.valid_until
+          ? new Date(request.body.valid_until)
+          : null;
+      if (
+        requestedValidUntil &&
+        Number.isNaN(requestedValidUntil.getTime())
+      ) {
+        return response.status(400).json({ error: '有效期时间格式无效' });
+      }
+      if (
+        requestedValidUntil &&
+        requestedValidUntil.getTime() <= Date.now()
+      ) {
+        return response
+          .status(400)
+          .json({ error: '有效期必须晚于发布时间' });
+      }
+
       const id = crypto.randomUUID();
       const source = await withTransaction(async (client) => {
         const result = await client.query<SourceRow>(
           `INSERT INTO sources
              (id, title, content, type, contact_mode, contact_value,
-              valid_until, location, status, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9)
+              valid_until, location, allow_discussion, status, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10)
            RETURNING *`,
           [
             id,
             title,
             content,
             type,
-            request.body.contact_mode === 'public' ||
-            request.body.contact_mode === 'masked'
+            request.body.contact_mode === 'public'
               ? request.body.contact_mode
               : 'platform',
             typeof request.body.contact_value === 'string'
               ? request.body.contact_value.trim() || null
               : null,
-            typeof request.body.valid_until === 'string'
-              ? request.body.valid_until || null
+            requestedValidUntil
+              ? requestedValidUntil.toISOString()
               : null,
             typeof request.body.location === 'string'
               ? request.body.location.trim() || null
               : null,
+            request.body.allow_discussion === true,
             user.id,
           ]
         );
@@ -333,14 +448,15 @@ sourcesRouter.post(
       const item = await withTransaction(async (client) => {
         const result = await client.query<Record<string, unknown>>(
           `INSERT INTO knowledge_items
-             (id, title, content, source_level, review_status, created_by, source_id)
-           VALUES ($1, $2, $3, 'admin_reviewed', 'approved', $4, $5)
+             (id, title, content, source_type, source_level, review_status, created_by, source_id)
+           VALUES ($1, $2, $3, $4, 'admin_reviewed', 'approved', $5, $6)
            ON CONFLICT (source_id) DO NOTHING
            RETURNING *`,
           [
             knowledgeId,
             source.title,
             source.content,
+            source.type,
             admin.id,
             sourceId,
           ]
@@ -465,7 +581,10 @@ sourcesRouter.patch(
         addAssignment('type', request.body.type.trim());
       }
       if (typeof request.body?.contact_mode === 'string') {
-        addAssignment('contact_mode', request.body.contact_mode);
+        addAssignment(
+          'contact_mode',
+          request.body.contact_mode === 'public' ? 'public' : 'platform'
+        );
       }
       if (
         request.body?.contact_value === null ||
@@ -477,13 +596,48 @@ sourcesRouter.patch(
         request.body?.valid_until === null ||
         typeof request.body?.valid_until === 'string'
       ) {
-        addAssignment('valid_until', request.body.valid_until || null);
+        const requestedValidUntil =
+          typeof request.body.valid_until === 'string' &&
+          request.body.valid_until
+            ? new Date(request.body.valid_until)
+            : null;
+        if (
+          requestedValidUntil &&
+          Number.isNaN(requestedValidUntil.getTime())
+        ) {
+          return response
+            .status(400)
+            .json({ error: '有效期时间格式无效' });
+        }
+        if (requestedValidUntil) {
+          const publishedAt = new Date(existing.created_at);
+          if (
+            Number.isNaN(publishedAt.getTime()) ||
+            requestedValidUntil.getTime() <= publishedAt.getTime()
+          ) {
+            return response
+              .status(400)
+              .json({ error: '有效期必须晚于发布时间' });
+          }
+        }
+        addAssignment(
+          'valid_until',
+          requestedValidUntil
+            ? requestedValidUntil.toISOString()
+            : null
+        );
       }
       if (
         request.body?.location === null ||
         typeof request.body?.location === 'string'
       ) {
         addAssignment('location', request.body.location || null);
+      }
+      if (typeof request.body?.allow_discussion === 'boolean') {
+        addAssignment(
+          'allow_discussion',
+          request.body.allow_discussion
+        );
       }
       if (request.body?.status === 'pending') {
         addAssignment('status', 'pending');

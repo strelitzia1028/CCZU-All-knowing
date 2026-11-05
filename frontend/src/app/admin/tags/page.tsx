@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
 import { PermanentDeleteDialog } from '@/components/permanent-delete-dialog';
+import { SearchFilterBar } from '@/components/search-filter-bar';
 
 interface Tag {
   id: string;
@@ -35,6 +36,9 @@ export default function TagsPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [sortMode, setSortMode] = useState<'created' | 'name'>('created');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [matchName, setMatchName] = useState(true);
+  const [matchDescription, setMatchDescription] = useState(true);
 
   const fetchTags = async () => {
     setLoading(true);
@@ -129,15 +133,27 @@ export default function TagsPage() {
     }
   };
 
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase('zh-CN');
+  const searchedTags = normalizedSearch
+    ? tags.filter(
+        (tag) =>
+          (matchName &&
+            tag.name.toLocaleLowerCase('zh-CN').includes(normalizedSearch)) ||
+          (matchDescription &&
+            (tag.description || '')
+              .toLocaleLowerCase('zh-CN')
+              .includes(normalizedSearch))
+      )
+    : tags;
   const visibleTags =
     sortMode === 'name'
-      ? [...tags].sort((left, right) =>
+      ? [...searchedTags].sort((left, right) =>
           left.name.localeCompare(right.name, 'zh-CN', {
             numeric: true,
             sensitivity: 'base',
           })
         )
-      : [...tags].sort(
+      : [...searchedTags].sort(
           (left, right) =>
             Date.parse(left.created_at) - Date.parse(right.created_at)
         );
@@ -242,6 +258,22 @@ export default function TagsPage() {
         </div>
       )}
 
+      <div className="mb-4">
+        <SearchFilterBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="搜索 Tag 名称或描述"
+          primaryLabel="名称"
+          secondaryLabel="描述"
+          matchPrimary={matchName}
+          matchSecondary={matchDescription}
+          onScopeChange={(scope) => {
+            setMatchName(scope.matchPrimary);
+            setMatchDescription(scope.matchSecondary);
+          }}
+        />
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="w-full">
           <thead className="border-b border-slate-200 bg-slate-50">
@@ -255,6 +287,8 @@ export default function TagsPage() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr><td colSpan={4} className="py-10 text-center text-slate-400">加载中...</td></tr>
+            ) : visibleTags.length === 0 ? (
+              <tr><td colSpan={4} className="py-10 text-center text-slate-400">没有匹配的标签</td></tr>
             ) : (
               visibleTags.map((tag) => (
                 <tr
