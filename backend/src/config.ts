@@ -16,6 +16,7 @@ const frontendOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:3000')
   .filter(Boolean);
 
 export const appConfig = {
+  host: process.env.BACKEND_HOST?.trim() || '0.0.0.0',
   port: Number(process.env.BACKEND_PORT || 4000),
   databaseUrl: process.env.DATABASE_URL?.trim() || '',
   databaseSsl: process.env.DATABASE_SSL === 'true',

@@ -9,7 +9,7 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 text-sm text-gray-500">
-      正在进入智能体...
+      正在进入 CCZU All-knowing...
     </main>
   );
 }

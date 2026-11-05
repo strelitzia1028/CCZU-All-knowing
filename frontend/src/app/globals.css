@@ -135,3 +135,90 @@
 body {
   @apply font-sans;
 }
+
+@keyframes cczu-dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cczu-dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes cczu-dialog-content-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes cczu-dialog-content-out {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+
+  to {
+    opacity: 0;
+    filter: blur(8px);
+  }
+}
+
+@keyframes cczu-answer-card-reveal {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+[data-slot='dialog-overlay'][data-state='open'] {
+  animation: cczu-dialog-overlay-in 180ms ease-out both;
+}
+
+[data-slot='dialog-overlay'][data-state='closed'] {
+  animation: cczu-dialog-overlay-out 160ms ease-in both;
+}
+
+[data-slot='dialog-content'][data-state='open'] {
+  animation: cczu-dialog-content-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[data-slot='dialog-content'][data-state='closed'] {
+  animation: cczu-dialog-content-out 160ms ease-in both;
+}
+
+.cczu-answer-card-reveal {
+  animation: cczu-answer-card-reveal 240ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='dialog-overlay'][data-state],
+  [data-slot='dialog-content'][data-state] {
+    animation-duration: 1ms;
+  }
+
+  .cczu-answer-card-reveal {
+    animation-duration: 1ms;
+  }
+}

@@ -3,9 +3,9 @@ import { appConfig } from './config.js';
 import { getPool, isDbConfigured } from './db.js';
 
 const app = createApp();
-const server = app.listen(appConfig.port, '0.0.0.0', () => {
+const server = app.listen(appConfig.port, appConfig.host, () => {
   console.log(
-    `CCZU backend listening on http://localhost:${appConfig.port}`
+    `CCZU backend listening on http://${appConfig.host}:${appConfig.port}`
   );
   console.log(
     `Database: ${isDbConfigured() ? 'configured' : 'DATABASE_URL missing'}`

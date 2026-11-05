@@ -1,24 +1,25 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import {
+  BookOpen,
+  Database,
+  FilePenLine,
+  Plus,
+  Trash2,
+} from 'lucide-react';
+import type { KnowledgeItem, Tag } from '@cczu/shared';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
-
-interface Tag {
-  id: string;
-  name: string;
-}
-
-interface KnowledgeItem {
-  id: string;
-  title: string;
-  content: string;
-  source_level: string;
-  review_status: string;
-  created_at: string;
-  updated_at: string;
-  knowledge_item_tags: Array<{ tag_id: string; tags: { id: string; name: string } }> | null;
-}
+import { PermanentDeleteDialog } from '@/components/permanent-delete-dialog';
+import { TagMultiSelect } from '@/components/tag-multi-select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const SOURCE_LEVELS = [
   { value: 'official', label: '官方' },
@@ -26,11 +27,9 @@ const SOURCE_LEVELS = [
   { value: 'user_share', label: '用户分享' },
 ];
 
-const SOURCE_LEVEL_LABELS: Record<string, string> = {
-  official: '官方',
-  admin_reviewed: '管理员审核',
-  user_share: '用户分享',
-};
+const SOURCE_LEVEL_LABELS: Record<string, string> = Object.fromEntries(
+  SOURCE_LEVELS.map((item) => [item.value, item.label])
+);
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
   approved: '已通过',
@@ -38,29 +37,63 @@ const REVIEW_STATUS_LABELS: Record<string, string> = {
   rejected: '已驳回',
 };
 
+type KnowledgeFilter = 'all' | 'demo' | 'standard';
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('zh-CN');
+}
+
+function isExpired(value: string) {
+  return (
+    (Date.now() - new Date(value).getTime()) / (1000 * 60 * 60 * 24) >
+    90
+  );
+}
+
 export default function KnowledgePage() {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
-  const [now, setNow] = useState(0);
+  const [filter, setFilter] = useState<KnowledgeFilter>('all');
   const [editing, setEditing] = useState<KnowledgeItem | null>(null);
+  const [viewing, setViewing] = useState<KnowledgeItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [deleting, setDeleting] = useState<KnowledgeItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [notice, setNotice] = useState<{
+    kind: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
-  // Form
   const [formTitle, setFormTitle] = useState('');
   const [formContent, setFormContent] = useState('');
   const [formSourceLevel, setFormSourceLevel] = useState('user_share');
   const [formReviewStatus, setFormReviewStatus] = useState('approved');
   const [formTagIds, setFormTagIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/knowledge');
-      const data = await res.json();
+      const response = await apiFetch('/api/knowledge', {
+        cache: 'no-store',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || '获取知识库失败');
+      }
       setItems(data.data || []);
-    } catch {
-      // ignore
+    } catch (requestError) {
+      setNotice({
+        kind: 'error',
+        text:
+          requestError instanceof Error
+            ? requestError.message
+            : '获取知识库失败',
+      });
     } finally {
       setLoading(false);
     }
@@ -68,18 +101,21 @@ export default function KnowledgePage() {
 
   const fetchTags = async () => {
     try {
-      const res = await apiFetch('/api/tags');
-      const data = await res.json();
-      setTags(data.data || []);
+      const response = await apiFetch('/api/tags');
+      const data = await response.json();
+      setTags(
+        (data.data || []).filter(
+          (tag: Tag) => tag.status === 'active'
+        )
+      );
     } catch {
-      // ignore
+      // Tag management still works independently.
     }
   };
 
   useEffect(() => {
-    setNow(Date.now());
-    fetchItems();
-    fetchTags();
+    void fetchItems();
+    void fetchTags();
   }, []);
 
   const resetForm = () => {
@@ -90,6 +126,7 @@ export default function KnowledgePage() {
     setFormTagIds([]);
     setEditing(null);
     setShowForm(false);
+    setFormError('');
   };
 
   const handleEdit = (item: KnowledgeItem) => {
@@ -98,17 +135,30 @@ export default function KnowledgePage() {
     setFormContent(item.content);
     setFormSourceLevel(item.source_level);
     setFormReviewStatus(item.review_status);
-    setFormTagIds(item.knowledge_item_tags?.map((t) => t.tag_id) || []);
+    setFormTagIds(
+      item.knowledge_item_tags?.map((tag) => tag.tag_id) || []
+    );
+    setFormError('');
     setShowForm(true);
   };
 
+  const openKnowledgeDetail = (item: KnowledgeItem) => {
+    setViewing(item);
+    setDetailOpen(true);
+  };
+
   const handleSubmit = async () => {
-    if (!formTitle || !formContent) return;
-
+    if (!formTitle.trim() || !formContent.trim()) {
+      setFormError('标题和正文不能为空');
+      return;
+    }
+    setSubmitting(true);
+    setFormError('');
     try {
-      if (editing) {
-        await apiFetch(`/api/knowledge/${editing.id}`, {
-          method: 'PATCH',
+      const response = await apiFetch(
+        editing ? `/api/knowledge/${editing.id}` : '/api/knowledge',
+        {
+          method: editing ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: formTitle,
@@ -117,141 +167,249 @@ export default function KnowledgePage() {
             review_status: formReviewStatus,
             tag_ids: formTagIds,
           }),
-        });
-      } else {
-        await apiFetch('/api/knowledge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: formTitle,
-            content: formContent,
-            source_level: formSourceLevel,
-            review_status: formReviewStatus,
-            tag_ids: formTagIds,
-          }),
-        });
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || '保存知识条目失败');
       }
+      setNotice({
+        kind: 'success',
+        text: editing ? '知识条目已更新' : '知识条目已创建',
+      });
       resetForm();
-      fetchItems();
-    } catch {
-      // ignore
+      await fetchItems();
+    } catch (requestError) {
+      setFormError(
+        requestError instanceof Error
+          ? requestError.message
+          : '保存知识条目失败'
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('确定删除该条目吗？')) return;
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setDeleteLoading(true);
+    setDeleteError('');
     try {
-      await apiFetch(`/api/knowledge/${id}`, { method: 'DELETE' });
-      fetchItems();
-    } catch {
-      // ignore
+      const response = await apiFetch(`/api/knowledge/${deleting.id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || '删除知识条目失败');
+      }
+      setNotice({ kind: 'success', text: '知识条目已永久删除' });
+      setDeleting(null);
+      if (viewing?.id === deleting.id) setDetailOpen(false);
+      await fetchItems();
+    } catch (requestError) {
+      setDeleteError(
+        requestError instanceof Error
+          ? requestError.message
+          : '删除知识条目失败'
+      );
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
-  const isDemo = (content: string) => content.startsWith('【示例数据，需替换】');
-  const isExpired = (dateStr: string) => {
-    const diff = (now - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
-    return diff > 90;
-  };
+  const demoCount = items.filter((item) => item.is_demo).length;
+  const standardCount = items.length - demoCount;
+  const filteredItems = items.filter((item) =>
+    filter === 'demo'
+      ? item.is_demo
+      : filter === 'standard'
+        ? !item.is_demo
+        : true
+  );
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="mx-auto max-w-6xl px-4 py-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">知识库管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理校区生活知识库条目</p>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">
+            <BookOpen className="h-6 w-6 text-blue-600" />
+            知识库管理
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            管理员可查看全部状态，包括普通用户看不到的示例数据和待审核内容。
+          </p>
         </div>
         <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+          type="button"
+          onClick={() => {
+            resetForm();
+            setShowForm(true);
+          }}
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
         >
-          + 新建条目
+          <Plus className="h-4 w-4" />
+          新建条目
         </button>
       </div>
 
-      {/* Demo data warning */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-700">
-        ⚠️ 标记为「示例数据」的条目需要替换为真实校区信息，请勿直接用于回答用户。
+      {notice && (
+        <div
+          className={cn(
+            'mb-4 rounded-lg border px-4 py-3 text-sm',
+            notice.kind === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-red-200 bg-red-50 text-red-700'
+          )}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs text-slate-400">全部条目</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900">
+            {items.length}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs text-slate-400">正式知识</div>
+          <div className="mt-1 text-2xl font-semibold text-emerald-700">
+            {standardCount}
+          </div>
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-xs text-amber-700">示例数据（管理员可见）</div>
+          <div className="mt-1 text-2xl font-semibold text-amber-800">
+            {demoCount}
+          </div>
+        </div>
       </div>
 
-      {/* Form */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[
+          { value: 'all' as const, label: `全部 ${items.length}` },
+          {
+            value: 'standard' as const,
+            label: `正式 ${standardCount}`,
+          },
+          { value: 'demo' as const, label: `示例 ${demoCount}` },
+        ].map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setFilter(option.value)}
+            className={cn(
+              'rounded-full px-4 py-1.5 text-sm font-medium transition',
+              filter === option.value
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100'
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">{editing ? '编辑条目' : '新建条目'}</h2>
-          <div className="space-y-4">
+        <div className="mb-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <h2 className="text-lg font-semibold text-slate-900">
+            {editing ? '编辑知识条目' : '新建知识条目'}
+          </h2>
+          <div className="mt-4 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                标题
+              </label>
               <input
                 value={formTitle}
-                onChange={(e) => setFormTitle(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                onChange={(event) => setFormTitle(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">正文</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                正文
+              </label>
               <textarea
                 value={formContent}
-                onChange={(e) => setFormContent(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-40 resize-none"
+                onChange={(event) => setFormContent(event.target.value)}
+                className="h-40 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm leading-6 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">来源等级</label>
-              <select
-                value={formSourceLevel}
-                onChange={(e) => setFormSourceLevel(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              >
-                {SOURCE_LEVELS.map((l) => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">审核状态</label>
-              <select
-                value={formReviewStatus}
-                onChange={(e) => setFormReviewStatus(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              >
-                {Object.entries(REVIEW_STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">标签</label>
-              <div className="flex flex-wrap gap-2">
-                {tags.map((tag) => (
-                  <button
-                    key={tag.id}
-                    onClick={() =>
-                      setFormTagIds((prev) =>
-                        prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]
-                      )
-                    }
-                    className={cn(
-                      'px-3 py-1 rounded-full text-xs',
-                      formTagIds.includes(tag.id)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    )}
-                  >
-                    {tag.name}
-                  </button>
-                ))}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  来源等级
+                </label>
+                <select
+                  value={formSourceLevel}
+                  onChange={(event) =>
+                    setFormSourceLevel(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+                >
+                  {SOURCE_LEVELS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  审核状态
+                </label>
+                <select
+                  value={formReviewStatus}
+                  onChange={(event) =>
+                    setFormReviewStatus(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+                >
+                  {Object.entries(REVIEW_STATUS_LABELS).map(
+                    ([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    )
+                  )}
+                </select>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Tag
+              </label>
+              <TagMultiSelect
+                tags={tags}
+                selectedIds={formTagIds}
+                onChange={setFormTagIds}
+                placeholder="选择知识条目 Tag"
+              />
+            </div>
+            {formError && (
+              <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+                {formError}
+              </p>
+            )}
+            <div className="flex gap-2 border-t border-slate-100 pt-4">
               <button
-                onClick={handleSubmit}
-                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={submitting}
+                className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-slate-300"
               >
-                {editing ? '保存修改' : '创建'}
+                {submitting
+                  ? '保存中...'
+                  : editing
+                    ? '保存修改'
+                    : '创建'}
               </button>
               <button
+                type="button"
                 onClick={resetForm}
-                className="px-4 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200"
+                className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-200"
               >
                 取消
               </button>
@@ -260,63 +418,207 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      {/* List */}
       <div className="space-y-3">
         {loading ? (
-          <div className="text-center py-12 text-gray-400">加载中...</div>
+          <div className="py-16 text-center text-sm text-slate-400">
+            正在加载知识库...
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-500">
+            当前筛选条件下暂无知识条目
+          </div>
         ) : (
-          items.map((item) => (
-            <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    {isDemo(item.content) && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700">示例数据</span>
+          filteredItems.map((item) => (
+            <article
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`查看知识条目：${item.title}`}
+              onClick={() => openKnowledgeDetail(item)}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openKnowledgeDetail(item);
+                }
+              }}
+              className="group cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none sm:p-5"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {item.is_demo && (
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                        示例数据
+                      </span>
                     )}
                     {isExpired(item.updated_at) && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-600">可能过期</span>
+                      <span className="rounded bg-red-50 px-2 py-0.5 text-[11px] text-red-600">
+                        可能过期
+                      </span>
                     )}
-                    <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-600">
-                      {SOURCE_LEVEL_LABELS[item.source_level]}
+                    <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
+                      {SOURCE_LEVEL_LABELS[item.source_level] ||
+                        item.source_level}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
-                      {REVIEW_STATUS_LABELS[item.review_status]}
+                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                      {REVIEW_STATUS_LABELS[item.review_status] ||
+                        item.review_status}
                     </span>
+                    {item.source_id && (
+                      <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
+                        <Database className="h-3 w-3" />
+                        来自信息源
+                      </span>
+                    )}
                   </div>
-                  <h3 className="font-medium text-gray-800">{item.title}</h3>
-                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">{item.content}</p>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                    <span>更新于 {new Date(item.updated_at).toLocaleDateString('zh-CN')}</span>
+                  <h3 className="mt-2 text-base font-semibold text-slate-900 transition-colors group-hover:text-blue-700">
+                    {item.title}
+                  </h3>
+                  <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                    {item.content}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                    <span>更新于 {formatDate(item.updated_at)}</span>
+                    {item.knowledge_item_tags?.length > 0 && (
+                      <span>
+                        {item.knowledge_item_tags
+                          .map((tag) => tag.tags?.name)
+                          .filter(Boolean)
+                          .join('、')}
+                      </span>
+                    )}
                   </div>
-                  {item.knowledge_item_tags && item.knowledge_item_tags.length > 0 && (
-                    <div className="flex gap-1 mt-2">
-                      {item.knowledge_item_tags.map((t) => (
-                        <span key={t.tag_id} className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
-                          {t.tags?.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
-                <div className="flex gap-1 ml-4">
+                <div
+                  className="flex shrink-0 flex-wrap justify-end gap-1.5"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <button
+                    type="button"
                     onClick={() => handleEdit(item)}
-                    className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                    className="inline-flex items-center gap-1 rounded bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
                   >
+                    <FilePenLine className="h-3.5 w-3.5" />
                     编辑
                   </button>
                   <button
-                    onClick={() => handleDelete(item.id)}
-                    className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                    type="button"
+                    onClick={() => {
+                      setDeleting(item);
+                      setDeleteError('');
+                    }}
+                    className="inline-flex items-center gap-1 rounded bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100"
                   >
+                    <Trash2 className="h-3.5 w-3.5" />
                     删除
                   </button>
                 </div>
               </div>
-            </div>
+            </article>
           ))
         )}
       </div>
+
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          if (!open) setDetailOpen(false);
+        }}
+      >
+        <DialogContent
+          className="max-h-[88vh] overflow-y-auto p-0 sm:max-w-3xl"
+          onAnimationEnd={(event) => {
+            if (event.animationName === 'cczu-dialog-content-out') {
+              setViewing(null);
+            }
+          }}
+        >
+          {viewing && (
+            <>
+              <DialogHeader className="border-b border-slate-200 px-6 py-5 pr-14">
+                <div className="flex flex-wrap gap-2">
+                  {viewing.is_demo && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      示例数据
+                    </span>
+                  )}
+                  <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                    {SOURCE_LEVEL_LABELS[viewing.source_level] ||
+                      viewing.source_level}
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    {REVIEW_STATUS_LABELS[viewing.review_status] ||
+                      viewing.review_status}
+                  </span>
+                </div>
+                <DialogTitle className="mt-2 text-xl leading-7 text-slate-900">
+                  {viewing.title}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  创建于 {formatDate(viewing.created_at)} · 更新于{' '}
+                  {formatDate(viewing.updated_at)}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-5 px-6 py-5">
+                <div className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                  {viewing.content}
+                </div>
+                {viewing.knowledge_item_tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                    {viewing.knowledge_item_tags.map((tag) => (
+                      <span
+                        key={tag.tag_id}
+                        className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600"
+                      >
+                        {tag.tags?.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailOpen(false);
+                      handleEdit(viewing);
+                    }}
+                    className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleting(viewing);
+                      setDetailOpen(false);
+                      setDeleteError('');
+                    }}
+                    className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+                  >
+                    永久删除
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <PermanentDeleteDialog
+        open={Boolean(deleting)}
+        itemName={deleting?.title || ''}
+        loading={deleteLoading}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleteLoading) {
+            setDeleting(null);
+            setDeleteError('');
+          }
+        }}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

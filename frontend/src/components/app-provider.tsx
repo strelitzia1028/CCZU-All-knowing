@@ -1,111 +1,139 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import type { SessionUser } from '@cczu/shared';
 import { apiFetch, setSessionToken } from '@/lib/api';
 
 interface AppContextType {
-  user: SessionUser;
-  switchRole: (role: 'user' | 'admin', password?: string) => Promise<void>;
+  user: SessionUser | null;
+  isLoading: boolean;
+  login: (username: string, password: string) => Promise<void>;
+  register: (
+    username: string,
+    displayName: string,
+    password: string
+  ) => Promise<void>;
+  adminLogin: (password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType>({
-  user: { id: 'user-001', display_name: '测试用户', role: 'user' },
-  switchRole: async () => {},
+  user: null,
+  isLoading: true,
+  login: async () => {},
+  register: async () => {},
+  adminLogin: async () => {},
+  logout: async () => {},
 });
 
 export function useApp() {
   return useContext(AppContext);
 }
 
+async function readAuthResponse(response: Response): Promise<SessionUser> {
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      typeof data?.error === 'string' ? data.error : '认证失败'
+    );
+  }
+
+  setSessionToken(data.token || null);
+  return {
+    id: data.id,
+    username: data.username,
+    display_name: data.display_name,
+    role: data.role,
+  };
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<SessionUser>({
-    id: 'user-001',
-    display_name: '测试用户',
-    role: 'user',
-  });
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
-    const initializeSession = async () => {
-      try {
-        const currentResponse = await apiFetch('/api/switch-role', {
-          cache: 'no-store',
-        });
-        const current = await currentResponse.json();
-
-        if (cancelled) return;
-
-        if (current?.id && (current.role === 'user' || current.role === 'admin')) {
-          setUser({
-            id: current.id,
-            display_name: current.display_name,
-            role: current.role,
-          });
-          setSessionToken(current.token || current.id);
-          return;
+    apiFetch('/api/auth/me', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) {
+          setUser(data?.user || null);
         }
-
-        const createResponse = await apiFetch('/api/switch-role', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: 'user' }),
-        });
-        const created = await createResponse.json();
-
-        if (
-          !cancelled &&
-          created?.id &&
-          (created.role === 'user' || created.role === 'admin')
-        ) {
-          setUser({
-            id: created.id,
-            display_name: created.display_name,
-            role: created.role,
-          });
-          setSessionToken(created.token || created.id);
-        }
-      } catch {
-        // Keep the default user state when session initialization is unavailable.
-      }
-    };
-
-    initializeSession();
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const switchRole = useCallback(async (
-    role: 'user' | 'admin',
-    password?: string
-  ) => {
-    const response = await apiFetch('/api/switch-role', {
+  const login = useCallback(async (username: string, password: string) => {
+    const response = await apiFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, password }),
+      body: JSON.stringify({ username, password }),
     });
-    const data = await response.json();
+    setUser(await readAuthResponse(response));
+  }, []);
 
-    if (!response.ok) {
-      throw new Error(
-        typeof data?.error === 'string' ? data.error : '切换角色失败'
-      );
+  const register = useCallback(
+    async (username: string, displayName: string, password: string) => {
+      const response = await apiFetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          display_name: displayName,
+          password,
+        }),
+      });
+      setUser(await readAuthResponse(response));
+    },
+    []
+  );
+
+  const adminLogin = useCallback(async (password: string) => {
+    const response = await apiFetch('/api/auth/admin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    setUser(await readAuthResponse(response));
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      setSessionToken(null);
+      setUser(null);
     }
-
-    setUser((prev) => ({
-      ...prev,
-      id: data.id ?? prev.id,
-      role: data.role,
-      display_name: data.display_name ?? prev.display_name,
-    }));
-    setSessionToken(data.token || null);
   }, []);
 
   return (
-    <AppContext.Provider value={{ user, switchRole }}>
+    <AppContext.Provider
+      value={{
+        user,
+        isLoading,
+        login,
+        register,
+        adminLogin,
+        logout,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

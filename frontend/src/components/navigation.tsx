@@ -3,202 +3,179 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import {
+  BookOpen,
+  Bot,
+  LogIn,
+  Menu,
+  Newspaper,
+  Shapes,
+  ShieldCheck,
+  Tags,
+  X,
+} from 'lucide-react';
 import { useApp } from './app-provider';
+import { AuthDialog } from './auth-dialog';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { href: '/chat', label: '智能对话', icon: '💬' },
-  { href: '/sources', label: '信息源', icon: '📋' },
+  { href: '/chat/', label: 'Agent', icon: Bot },
+  { href: '/sources/', label: '信息源', icon: Newspaper },
 ];
 
 const adminNavItems = [
-  { href: '/admin/knowledge', label: '知识库管理', icon: '📚' },
-  { href: '/admin/tags', label: 'Tag 管理', icon: '🏷️' },
-  { href: '/admin/review', label: '审核后台', icon: '✅' },
+  { href: '/admin/knowledge/', label: '知识库', icon: BookOpen },
+  { href: '/admin/tags/', label: 'Tag 管理', icon: Tags },
+  { href: '/admin/source-types/', label: '类型管理', icon: Shapes },
+  { href: '/admin/review/', label: '审核后台', icon: ShieldCheck },
 ];
 
 export function Navigation() {
   const pathname = usePathname();
-  const { user, switchRole } = useApp();
+  const { user, isLoading, logout } = useApp();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [adminDialogOpen, setAdminDialogOpen] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const isAdmin = user.role === 'admin';
+  const [authOpen, setAuthOpen] = useState(false);
+  const isAdmin = user?.role === 'admin';
 
-  const handleRoleClick = async () => {
-    if (isAdmin) {
-      await switchRole('user');
-      return;
-    }
-    setAdminPassword('');
-    setLoginError('');
-    setAdminDialogOpen(true);
-  };
+  const renderNavItem = (
+    item: (typeof navItems)[number],
+    mobile = false
+  ) => {
+    const Icon = item.icon;
+    const active =
+      pathname === item.href || pathname?.startsWith(item.href);
 
-  const handleAdminLogin = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setLoginLoading(true);
-    setLoginError('');
-
-    try {
-      await switchRole('admin', adminPassword);
-      setAdminDialogOpen(false);
-      setAdminPassword('');
-    } catch (error) {
-      setLoginError(
-        error instanceof Error ? error.message : '管理员密码错误'
-      );
-    } finally {
-      setLoginLoading(false);
-    }
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        prefetch={false}
+        onClick={() => {
+          if (mobile) setMobileOpen(false);
+        }}
+        className={cn(
+          mobile
+            ? 'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium'
+            : 'flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition',
+          active
+            ? 'bg-blue-50 text-blue-700'
+            : 'text-slate-600 hover:bg-slate-50'
+        )}
+      >
+        <Icon className="h-4 w-4" />
+        {item.label}
+      </Link>
+    );
   };
 
   return (
     <>
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-14">
-          <Link href="/chat" className="flex items-center gap-2 font-bold text-lg text-blue-600">
-            <span>🎓</span>
-            <span className="hidden sm:inline">常大西太湖互助</span>
-          </Link>
+      <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4">
+          <div className="flex h-14 items-center justify-between gap-3">
+            <Link
+              href="/chat/"
+              prefetch={false}
+              className="flex shrink-0 items-center gap-2 text-base font-semibold text-slate-900"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
+                <Bot className="h-4.5 w-4.5" />
+              </span>
+              <span className="hidden sm:inline">CCZU All-knowing</span>
+              <span className="sm:hidden">CCZU</span>
+            </Link>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                  pathname === item.href || pathname?.startsWith(item.href + '/')
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-50'
-                )}
-              >
-                <span className="mr-1">{item.icon}</span>
-                {item.label}
-              </Link>
-            ))}
-            {isAdmin && (
-              <>
-                <div className="w-px h-6 bg-gray-200 mx-1" />
-                {adminNavItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      'px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                      pathname === item.href
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-gray-600 hover:bg-gray-50'
-                    )}
-                  >
-                    <span className="mr-1">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                ))}
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Role switcher */}
-            <button
-              onClick={() => {
-                void handleRoleClick();
-              }}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                isAdmin
-                  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            <div className="hidden items-center gap-1 md:flex">
+              {isLoading ? (
+                <div
+                  className="flex items-center gap-2"
+                  aria-label="正在加载导航"
+                >
+                  {[56, 72, 64, 68, 72].map((width, index) => (
+                    <span
+                      key={`${width}-${index}`}
+                      className="h-7 animate-pulse rounded-md bg-slate-100"
+                      style={{ width }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {navItems.map((item) => renderNavItem(item))}
+                  {isAdmin && (
+                    <div className="mx-1 h-5 w-px bg-slate-200" />
+                  )}
+                  {isAdmin &&
+                    adminNavItems.map((item) => renderNavItem(item))}
+                </>
               )}
-            >
-              {isAdmin ? '管理员' : '普通用户'}
-            </button>
+            </div>
 
-            {/* Mobile menu button */}
-            <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="md:hidden p-2 rounded-md text-gray-500 hover:bg-gray-100"
-            >
-              ☰
-            </button>
-          </div>
-        </div>
+            <div className="flex items-center gap-2">
+              {isLoading ? (
+                <span className="text-xs text-slate-400">加载中...</span>
+              ) : user ? (
+                <>
+                  {!isAdmin && (
+                    <span className="hidden rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 sm:inline">
+                      {user.display_name}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void logout()}
+                    className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                  >
+                    退出
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAuthOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  <LogIn className="h-3.5 w-3.5" />
+                  登录 / 注册
+                </button>
+              )}
 
-        {/* Mobile nav */}
-        {mobileOpen && (
-          <div className="md:hidden pb-3 border-t border-gray-100 pt-2">
-            {[...navItems, ...(isAdmin ? adminNavItems : [])].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  'block px-3 py-2 rounded-md text-sm font-medium',
-                  pathname === item.href
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-50'
-                )}
-              >
-                <span className="mr-2">{item.icon}</span>
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-      </nav>
-
-      {adminDialogOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 px-4">
-          <form
-            onSubmit={(event) => {
-              void handleAdminLogin(event);
-            }}
-            className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-xl"
-          >
-            <h2 className="text-lg font-semibold text-gray-800">管理员登录</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              输入管理员密码后才能访问管理后台。
-            </p>
-            <label className="mt-4 block text-sm font-medium text-gray-700">
-              管理员密码
-            </label>
-            <input
-              autoFocus
-              type="password"
-              value={adminPassword}
-              onChange={(event) => setAdminPassword(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              placeholder="请输入管理员密码"
-            />
-            {loginError && (
-              <p className="mt-2 text-sm text-red-600">{loginError}</p>
-            )}
-            <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setAdminDialogOpen(false)}
-                className="rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-600 hover:bg-gray-200"
+                onClick={() => setMobileOpen((open) => !open)}
+                className="rounded-md p-2 text-slate-500 hover:bg-slate-100 md:hidden"
+                aria-label={mobileOpen ? '关闭菜单' : '打开菜单'}
               >
-                取消
-              </button>
-              <button
-                type="submit"
-                disabled={loginLoading || !adminPassword}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-              >
-                {loginLoading ? '验证中...' : '进入后台'}
+                {mobileOpen ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Menu className="h-5 w-5" />
+                )}
               </button>
             </div>
-          </form>
+          </div>
+
+          {mobileOpen && (
+            <div className="space-y-1 border-t border-slate-100 py-2 md:hidden">
+              {isLoading
+                ? [0, 1, 2].map((item) => (
+                    <div
+                      key={item}
+                      className="mx-3 my-2 h-7 animate-pulse rounded-md bg-slate-100"
+                    />
+                  ))
+                : [...navItems, ...(isAdmin ? adminNavItems : [])].map(
+                    (item) => renderNavItem(item, true)
+                  )}
+            </div>
+          )}
         </div>
-      )}
+      </nav>
+
+      <AuthDialog
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+      />
     </>
   );
 }

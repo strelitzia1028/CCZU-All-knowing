@@ -6,6 +6,7 @@ import { verifySessionToken } from './auth-token.js';
 
 interface ProfileRow {
   id: string;
+  username: string | null;
   display_name: string;
   role: string;
 }
@@ -35,7 +36,7 @@ export async function getUserById(
   if (isDbConfigured()) {
     try {
       const rows = await query<ProfileRow>(
-        `SELECT id, display_name, role
+        `SELECT id, username, display_name, role
          FROM profiles
          WHERE id = $1
          LIMIT 1`,
@@ -45,6 +46,7 @@ export async function getUserById(
       if (profile) {
         return {
           id: profile.id,
+          username: profile.username || undefined,
           display_name: profile.display_name,
           role: normalizeRole(profile.role),
         };
@@ -65,7 +67,7 @@ export async function getUserByRole(
   if (isDbConfigured()) {
     try {
       const rows = await query<ProfileRow>(
-        `SELECT id, display_name, role
+        `SELECT id, username, display_name, role
          FROM profiles
          WHERE role = $1
          ORDER BY created_at ASC
@@ -76,6 +78,7 @@ export async function getUserByRole(
       if (profile) {
         return {
           id: profile.id,
+          username: profile.username || undefined,
           display_name: profile.display_name,
           role: normalizeRole(profile.role),
         };

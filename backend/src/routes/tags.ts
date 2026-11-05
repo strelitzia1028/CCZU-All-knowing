@@ -2,6 +2,10 @@ import { Router } from 'express';
 import { asyncRoute, sendApiError } from '../http.js';
 import { query } from '../db.js';
 import { getCurrentUser, requireAdmin } from '../session.js';
+import {
+  suggestTagsFromAllowed,
+  summarizeSourceContent,
+} from '../llm.js';
 
 interface TagRow {
   id: string;
@@ -27,13 +31,71 @@ tagsRouter.get(
       const rows = await query<TagRow>(
         `SELECT id, name, description, status, created_at
          FROM tags
-         WHERE status = 'active'
-         ORDER BY created_at ASC
-         LIMIT 100`
+         WHERE $1 = 'admin' OR status = 'active'
+         ORDER BY
+           CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+           created_at ASC
+         LIMIT 100`,
+        [user.role]
       );
       return response.json({ data: rows });
     } catch (error) {
       return sendApiError(response, error, '获取标签失败');
+    }
+  })
+);
+
+tagsRouter.post(
+  '/suggest',
+  asyncRoute(async (request, response) => {
+    try {
+      const user = await getCurrentUser(request);
+      if (!user) {
+        return response
+          .status(401)
+          .json({ error: '未登录或会话已过期' });
+      }
+
+      const title =
+        typeof request.body?.title === 'string'
+          ? request.body.title.trim()
+          : '';
+      const content =
+        typeof request.body?.content === 'string'
+          ? request.body.content.trim()
+          : '';
+      const combined = [title, content].filter(Boolean).join('\n');
+      if (combined.length < 1) {
+        return response.json({ data: [] });
+      }
+
+      const activeTags = await query<TagRow>(
+        `SELECT id, name, description, status, created_at
+         FROM tags
+         WHERE status = 'active'
+         ORDER BY created_at ASC`
+      );
+      const sourceContent = combined.slice(0, 5000);
+      const summary = await summarizeSourceContent(sourceContent);
+      const suggestedNames = await suggestTagsFromAllowed(
+        sourceContent,
+        activeTags.map((tag) => ({
+          name: tag.name,
+          description: tag.description,
+        }))
+      );
+      const normalizedNames = new Set(
+        suggestedNames.map((name) => name.toLowerCase())
+      );
+
+      return response.json({
+        summary,
+        data: activeTags.filter((tag) =>
+          normalizedNames.has(tag.name.toLowerCase())
+        ),
+      });
+    } catch (error) {
+      return sendApiError(response, error, 'AI 标签推荐失败');
     }
   })
 );

@@ -1,6 +1,12 @@
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000'
-).replace(/\/+$/, '');
+const configuredApiBaseUrl =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || '';
+const API_BASE_URL =
+  configuredApiBaseUrl === 'same-origin'
+    ? ''
+    : (configuredApiBaseUrl || 'http://localhost:4000').replace(
+        /\/+$/,
+        ''
+      );
 
 const TOKEN_KEY = 'cczu_session_token';
 

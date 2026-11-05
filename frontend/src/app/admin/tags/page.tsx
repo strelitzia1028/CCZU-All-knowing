@@ -1,8 +1,20 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import {
+  ArrowDownAZ,
+  Clock3,
+  Pencil,
+  Plus,
+  Power,
+  Save,
+  Tags,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
+import { PermanentDeleteDialog } from '@/components/permanent-delete-dialog';
 
 interface Tag {
   id: string;
@@ -19,6 +31,10 @@ export default function TagsPage() {
   const [editing, setEditing] = useState<Tag | null>(null);
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
+  const [deletingTag, setDeletingTag] = useState<Tag | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [sortMode, setSortMode] = useState<'created' | 'name'>('created');
 
   const fetchTags = async () => {
     setLoading(true);
@@ -89,58 +105,136 @@ export default function TagsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('确定停用该标签吗？停用后不再出现在推荐列表。')) return;
+  const handleDelete = async () => {
+    if (!deletingTag) return;
+    setDeleteLoading(true);
+    setDeleteError('');
+
     try {
-      await apiFetch(`/api/tags/${id}`, { method: 'DELETE' });
+      const response = await apiFetch(`/api/tags/${deletingTag.id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || '删除失败');
+      }
+      setDeletingTag(null);
       fetchTags();
-    } catch {
-      // ignore
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : '删除失败'
+      );
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
+  const visibleTags =
+    sortMode === 'name'
+      ? [...tags].sort((left, right) =>
+          left.name.localeCompare(right.name, 'zh-CN', {
+            numeric: true,
+            sensitivity: 'base',
+          })
+        )
+      : [...tags].sort(
+          (left, right) =>
+            Date.parse(left.created_at) - Date.parse(right.created_at)
+        );
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="mx-auto max-w-5xl px-4 py-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">Tag 管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理全局标签库，停用后不再推荐</p>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">
+            <Tags className="h-6 w-6 text-blue-600" />
+            Tag 管理
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            管理全局标签库，停用后不再推荐
+          </p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-        >
-          + 新建标签
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSortMode('created')}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition',
+              sortMode === 'created'
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100'
+            )}
+          >
+            <Clock3 className="h-4 w-4" />
+            按创建时间排序
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortMode('name')}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition',
+              sortMode === 'name'
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100'
+            )}
+          >
+            <ArrowDownAZ className="h-4 w-4" />
+            按名称排序
+          </button>
+          <button
+            type="button"
+            onClick={() => { resetForm(); setShowForm(true); }}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            新建标签
+          </button>
+        </div>
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">{editing ? '编辑标签' : '新建标签'}</h2>
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            {editing ? '编辑标签' : '新建标签'}
+          </h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">标签名</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                标签名
+              </label>
               <input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 placeholder="如：食堂"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                描述
+              </label>
               <input
                 value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 placeholder="标签描述（可选）"
               />
             </div>
-            <div className="flex gap-2">
-              <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+            <div className="flex gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                <Save className="h-4 w-4" />
                 {editing ? '保存' : '创建'}
               </button>
-              <button onClick={resetForm} className="px-4 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-200"
+              >
+                <X className="h-4 w-4" />
                 取消
               </button>
             </div>
@@ -148,59 +242,82 @@ export default function TagsPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="border-b border-slate-200 bg-slate-50">
             <tr>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">标签名</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">描述</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">状态</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">操作</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">标签名</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">描述</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">状态</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">操作</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={4} className="text-center py-8 text-gray-400">加载中...</td></tr>
+              <tr><td colSpan={4} className="py-10 text-center text-slate-400">加载中...</td></tr>
             ) : (
-              tags.map((tag) => (
-                <tr key={tag.id} className="hover:bg-gray-50">
+              visibleTags.map((tag) => (
+                <tr
+                  key={tag.id}
+                  className={cn(
+                    tag.status === 'active'
+                      ? 'hover:bg-slate-50'
+                      : 'bg-slate-50 text-slate-400 opacity-60'
+                  )}
+                >
                   <td className="px-4 py-3">
                     <span className={cn(
                       'inline-block px-2 py-0.5 rounded text-sm font-medium',
-                      tag.status === 'active' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-400'
+                      tag.status === 'active' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'
                     )}>
                       {tag.name}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{tag.description || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-slate-500">{tag.description || '-'}</td>
                   <td className="px-4 py-3">
                     <span className={cn(
                       'text-xs px-2 py-0.5 rounded',
-                      tag.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      tag.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                     )}>
-                      {tag.status === 'active' ? '启用' : '停用'}
+                      {tag.status === 'active' ? '启用' : '等待启用'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
                       <button
+                        type="button"
                         onClick={() => handleEdit(tag)}
-                        className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                        className="inline-flex items-center gap-1 rounded bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
                       >
+                        <Pencil className="h-3.5 w-3.5" />
                         编辑
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleToggleStatus(tag)}
-                        className="text-xs px-2 py-1 bg-yellow-50 text-yellow-600 rounded hover:bg-yellow-100"
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded px-2.5 py-1.5 text-xs',
+                          tag.status === 'active'
+                            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                        )}
                       >
+                        <Power className="h-3.5 w-3.5" />
                         {tag.status === 'active' ? '停用' : '启用'}
                       </button>
-                      <button
-                        onClick={() => handleDelete(tag.id)}
-                        className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100"
-                      >
-                        删除
-                      </button>
+                      {tag.status === 'disabled' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeletingTag(tag);
+                            setDeleteError('');
+                          }}
+                          className="inline-flex items-center gap-1 rounded bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          永久删除
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -209,6 +326,22 @@ export default function TagsPage() {
           </tbody>
         </table>
       </div>
+
+      <PermanentDeleteDialog
+        open={Boolean(deletingTag)}
+        itemName={deletingTag?.name || ''}
+        loading={deleteLoading}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleteLoading) {
+            setDeletingTag(null);
+            setDeleteError('');
+          }
+        }}
+        onConfirm={() => {
+          void handleDelete();
+        }}
+      />
     </div>
   );
 }

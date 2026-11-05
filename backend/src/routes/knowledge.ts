@@ -25,6 +25,7 @@ knowledgeRouter.get(
       const rows = await query<KnowledgeItemRow>(
         `SELECT
            ki.*,
+           (ki.content LIKE '【示例数据，需替换】%') AS is_demo,
            COALESCE(
              json_agg(
                json_build_object(
@@ -39,7 +40,7 @@ knowledgeRouter.get(
          LEFT JOIN knowledge_item_tags kit ON kit.knowledge_item_id = ki.id
          LEFT JOIN tags t ON t.id = kit.tag_id
          WHERE $1 = 'admin' OR ki.review_status = 'approved'
-         GROUP BY ki.id
+         GROUP BY ki.id, ki.content
          ORDER BY ki.updated_at DESC
          LIMIT 200`,
         [user.role]
@@ -123,7 +124,8 @@ knowledgeRouter.get(
       }
 
       const rows = await query<KnowledgeItemRow>(
-        `SELECT *
+        `SELECT *,
+                (content LIKE '【示例数据，需替换】%') AS is_demo
          FROM knowledge_items
          WHERE id = $1
          LIMIT 1`,

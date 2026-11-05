@@ -10,6 +10,8 @@ export const profiles = pgTable(
 	"profiles",
 	{
 		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		username: varchar("username", { length: 64 }).unique(),
+		password_hash: text("password_hash"),
 		display_name: varchar("display_name", { length: 128 }).notNull(),
 		role: varchar("role", { length: 20 }).notNull().default("user"),
 		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -29,6 +31,22 @@ export const tags = pgTable(
 	(table) => [index("tags_status_idx").on(table.status), index("tags_name_idx").on(table.name)]
 );
 
+export const sourceTypes = pgTable(
+	"source_types",
+	{
+		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		value: varchar("value", { length: 50 }).notNull().unique(),
+		label: varchar("label", { length: 64 }).notNull(),
+		description: text("description"),
+		status: varchar("status", { length: 20 }).notNull().default("active"),
+		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("source_types_status_idx").on(table.status),
+		index("source_types_value_idx").on(table.value),
+	]
+);
+
 export const knowledgeItems = pgTable(
 	"knowledge_items",
 	{
@@ -38,6 +56,7 @@ export const knowledgeItems = pgTable(
 		source_level: varchar("source_level", { length: 30 }).notNull().default("user_share"),
 		review_status: varchar("review_status", { length: 20 }).notNull().default("approved"),
 		created_by: varchar("created_by", { length: 36 }).references(() => profiles.id),
+		source_id: varchar("source_id", { length: 36 }),
 		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updated_at: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
@@ -46,6 +65,7 @@ export const knowledgeItems = pgTable(
 		index("knowledge_items_source_idx").on(table.source_level),
 		index("knowledge_items_updated_idx").on(table.updated_at),
 		index("knowledge_items_created_by_idx").on(table.created_by),
+		uniqueIndex("knowledge_items_source_unique").on(table.source_id),
 	]
 );
 
@@ -98,6 +118,29 @@ export const sourceTags = pgTable(
 		index("st_source_id_idx").on(table.source_id),
 		index("st_tag_id_idx").on(table.tag_id),
 		uniqueIndex("st_source_tag_unique").on(table.source_id, table.tag_id),
+	]
+);
+
+export const catalogRequests = pgTable(
+	"catalog_requests",
+	{
+		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		request_type: varchar("request_type", { length: 20 }).notNull(),
+		name: varchar("name", { length: 64 }).notNull(),
+		code: varchar("code", { length: 50 }),
+		description: text("description"),
+		status: varchar("status", { length: 20 }).notNull().default("pending"),
+		requested_by: varchar("requested_by", { length: 36 }).notNull().references(() => profiles.id),
+		reviewed_by: varchar("reviewed_by", { length: 36 }).references(() => profiles.id),
+		review_note: text("review_note"),
+		target_id: varchar("target_id", { length: 36 }),
+		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updated_at: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("catalog_requests_status_idx").on(table.status),
+		index("catalog_requests_type_idx").on(table.request_type),
+		index("catalog_requests_requested_by_idx").on(table.requested_by),
 	]
 );
 

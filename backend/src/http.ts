@@ -41,6 +41,12 @@ export function setSessionCookie(response: Response, sid: string) {
   });
 }
 
+export function clearSessionCookie(response: Response) {
+  response.clearCookie('sid', {
+    path: '/',
+  });
+}
+
 export class AuthError extends Error {
   status: number;
 
