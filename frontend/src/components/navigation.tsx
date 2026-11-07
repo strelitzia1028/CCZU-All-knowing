@@ -30,11 +30,11 @@ import { apiFetch } from '@/lib/api';
 const navItems = [
   { href: '/chat/', label: 'Agent', icon: Bot },
   { href: '/sources/', label: '信息源', icon: Newspaper },
+  { href: '/knowledge/', label: '知识库', icon: BookOpen },
   { href: '/messages/', label: '消息', icon: Bell },
 ];
 
 const adminNavItems = [
-  { href: '/admin/knowledge/', label: '知识库', icon: BookOpen },
   { href: '/admin/tags/', label: 'Tag 管理', icon: Tags },
   { href: '/admin/source-types/', label: '类型管理', icon: Shapes },
   { href: '/admin/review/', label: '审核后台', icon: ShieldCheck },
@@ -54,7 +54,10 @@ export function Navigation() {
   const isAdmin = user?.role === 'admin';
   const availableNavItems = user
     ? navItems
-    : navItems.filter((item) => item.href !== '/messages/');
+    : navItems.filter(
+        (item) =>
+          item.href !== '/messages/' && item.href !== '/knowledge/'
+      );
 
   useLayoutEffect(() => {
     const main = document.querySelector('main');

@@ -40,6 +40,21 @@ export const appConfig = {
     temperature: Number(process.env.EXTRACT_TEMPERATURE || 0.1),
     timeoutMs: Number(process.env.EXTRACT_TIMEOUT_MS || 60_000),
   },
+  webSearch: {
+    enabled: process.env.WEB_SEARCH_ENABLED !== 'false',
+    baseUrl:
+      process.env.WEB_SEARCH_BASE_URL?.trim() ||
+      'https://www.so.com/s',
+    fallbackUrls: (
+      process.env.WEB_SEARCH_FALLBACK_URLS ||
+      'https://cn.bing.com/search,https://www.sogou.com/web'
+    )
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean),
+    timeoutMs: Number(process.env.WEB_SEARCH_TIMEOUT_MS || 12_000),
+    limit: Number(process.env.WEB_SEARCH_RESULT_LIMIT || 5),
+  },
   adminPassword: process.env.ADMIN_PASSWORD || '',
   sessionSecret: process.env.SESSION_SECRET || '',
   frontendOrigins,

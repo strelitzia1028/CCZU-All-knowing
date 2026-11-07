@@ -5,9 +5,17 @@ import { getCurrentUser } from '../session.js';
 import { streamChat } from '../llm.js';
 import {
   buildAgentMessages,
+  buildReasoningMessages,
+  finalizeReasoningSupplement,
   normalizeAgentHistory,
   prepareAgentContext,
+  prepareReasoningRetrieval,
 } from '../agent.js';
+import {
+  searchWeb,
+  shouldUseWebSearch,
+  type WebSearchResult,
+} from '../web-search.js';
 
 export const chatRouter = Router();
 
@@ -105,39 +113,135 @@ chatRouter.post(
         })),
       });
 
+      let strictAnswer = '';
       if (context.requiresFallbackOnly) {
+        strictAnswer = '无法找到匹配项，请减少限定词';
         writeEvent({
           type: 'chunk',
-          content: '无法找到匹配项，请减少限定词',
+          content: strictAnswer,
         });
-        writeEvent({ type: 'done' });
-        response.end();
-        return;
+      } else {
+        const stream = streamChat(buildAgentMessages(context, message));
+        for await (const chunk of stream) {
+          strictAnswer += chunk;
+          writeEvent({ type: 'chunk', content: chunk });
+        }
+
+        const expiredSources = context.communitySources.filter(
+          (source) => source.is_expired
+        );
+        if (
+          expiredSources.length > 0 &&
+          !/(过期|失效|有效期)/.test(strictAnswer)
+        ) {
+          const titles = expiredSources
+            .slice(0, 3)
+            .map((source) => `「${source.title}」`)
+            .join('、');
+          const warning = `\n\n注意：${titles}已超过有效期，排序时已降权。建议先联系发布者确认现状后再使用。`;
+          strictAnswer += warning;
+          writeEvent({ type: 'chunk', content: warning });
+        }
       }
 
-      const stream = streamChat(buildAgentMessages(context, message));
-      let answerText = '';
+      if (context.plan.intent !== 'smalltalk') {
+        writeEvent({ type: 'reasoning_started' });
+        try {
+          let reasoningRetrieval = {
+            knowledgeResults: context.knowledgeResults,
+            communitySources: context.communitySources,
+            webResults: [] as WebSearchResult[],
+          };
+          try {
+            const broader = await prepareReasoningRetrieval(context);
+            reasoningRetrieval = {
+              ...broader,
+              webResults: [],
+            };
+          } catch (error) {
+            console.error(
+              'AI reasoning retrieval failed, using strict context:',
+              error
+            );
+          }
 
-      for await (const chunk of stream) {
-        answerText += chunk;
-        writeEvent({ type: 'chunk', content: chunk });
-      }
-
-      const expiredSources = context.communitySources.filter(
-        (source) => source.is_expired
-      );
-      if (
-        expiredSources.length > 0 &&
-        !/(过期|失效|有效期)/.test(answerText)
-      ) {
-        const titles = expiredSources
-          .slice(0, 3)
-          .map((source) => `「${source.title}」`)
-          .join('、');
-        writeEvent({
-          type: 'chunk',
-          content: `\n\n注意：${titles}已超过有效期，排序时已降权。建议先联系发布者确认现状后再使用。`,
-        });
+          if (shouldUseWebSearch(context.plan.need_summary)) {
+            const webStartedAt = Date.now();
+            writeEvent({
+              type: 'agent_trace',
+              step: {
+                id: 'reasoning_web_search',
+                tool: 'search_web_supplement',
+                label: 'AI 补充网络检索',
+                status: 'running',
+                summary: '正在搜索可补充行程规划与广域推荐的网络信息...',
+                duration_ms: 0,
+              },
+            });
+            try {
+              const webResults = await searchWeb(
+                context.plan.need_summary
+              );
+              reasoningRetrieval = {
+                ...reasoningRetrieval,
+                webResults,
+              };
+              writeEvent({
+                type: 'agent_trace',
+                step: {
+                  id: 'reasoning_web_search',
+                  tool: 'search_web_supplement',
+                  label: 'AI 补充网络检索',
+                  status: 'completed',
+                  summary:
+                    webResults.length > 0
+                      ? `网络检索完成，获得 ${webResults.length} 条补充结果`
+                      : '网络检索完成，暂未获得可用补充结果',
+                  duration_ms: Date.now() - webStartedAt,
+                },
+              });
+            } catch (error) {
+              console.error('AI reasoning web search failed:', error);
+              writeEvent({
+                type: 'agent_trace',
+                step: {
+                  id: 'reasoning_web_search',
+                  tool: 'search_web_supplement',
+                  label: 'AI 补充网络检索',
+                  status: 'warning',
+                  summary: '网络检索不可用，已继续使用本地广域素材',
+                  duration_ms: Date.now() - webStartedAt,
+                },
+              });
+            }
+          }
+          const reasoningStream = streamChat(
+            buildReasoningMessages(context, message, reasoningRetrieval)
+          );
+          let reasoningText = '';
+          for await (const chunk of reasoningStream) {
+            reasoningText += chunk;
+          }
+          writeEvent({
+            type: 'reasoning_chunk',
+            content: finalizeReasoningSupplement(
+              reasoningText,
+              context,
+              message,
+              reasoningRetrieval
+            ),
+          });
+          writeEvent({ type: 'reasoning_done' });
+        } catch (error) {
+          console.error('AI reasoning supplement failed:', error);
+          writeEvent({
+            type: 'reasoning_error',
+            error:
+              error instanceof Error
+                ? error.message
+                : 'AI 推理补充生成失败',
+          });
+        }
       }
 
       writeEvent({ type: 'done' });

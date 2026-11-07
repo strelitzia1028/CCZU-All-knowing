@@ -17,7 +17,7 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7a564ce2-3407-4b92-a21a-efd4280d30a7" name="更改" comment="20261106001 功能几乎已经完善，开始准备精细化调整" />
+    <list default="true" id="7a564ce2-3407-4b92-a21a-efd4280d30a7" name="更改" comment="20261107001 新增网络搜索，修改回答结果的过滤规则" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -46,23 +46,23 @@
 }</component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0" />
-      <entry key="S2" value="1.0" />
-      <entry key="S5" value="1.0" />
-      <entry key="S10" value="1.0" />
-      <entry key="S30" value="1.0" />
-      <entry key="S60" value="1.0" />
-      <entry key="M2" value="1.0" />
-      <entry key="M5" value="1.0" />
-      <entry key="M10" value="1.0" />
-      <entry key="M15" value="1.0" />
-      <entry key="M30" value="1.0" />
-      <entry key="H1" value="1.0" />
-      <entry key="H2" value="1.0" />
-      <entry key="H4" value="1.0" />
-      <entry key="D1" value="1.0" />
-      <entry key="W1" value="1.0" />
+      <entry key="MS100" value="1.0000006885190944" />
+      <entry key="MS500" value="1.0592147123685942" />
+      <entry key="S2" value="1.7498749852365059" />
+      <entry key="S5" value="3.1567130115058513" />
+      <entry key="S10" value="4.946448030252487" />
+      <entry key="S30" value="7.982241936097149" />
+      <entry key="S60" value="9.297819456734965" />
+      <entry key="M2" value="10.092868984660084" />
+      <entry key="M5" value="10.622552940747976" />
+      <entry key="M10" value="10.808741144951703" />
+      <entry key="M15" value="10.871922785198949" />
+      <entry key="M30" value="10.93567373212557" />
+      <entry key="H1" value="10.96776457236344" />
+      <entry key="H2" value="10.983864165197426" />
+      <entry key="H4" value="10.991927546392837" />
+      <entry key="D1" value="10.998653960530339" />
+      <entry key="W1" value="10.999807693198907" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -84,23 +84,23 @@
       <entry key="W1" value="0.0" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.08717147914690035" />
-      <entry key="MS500" value="0.6138678419575302" />
-      <entry key="S2" value="0.8851537645795451" />
-      <entry key="S5" value="0.952373907319402" />
-      <entry key="S10" value="0.9758964634219155" />
-      <entry key="S30" value="0.9919000558554965" />
-      <entry key="S60" value="0.995941793407374" />
-      <entry key="M2" value="0.9979688338857953" />
-      <entry key="M5" value="0.9991870379410045" />
-      <entry key="M10" value="0.9995934363234907" />
-      <entry key="M15" value="0.9997289391796718" />
-      <entry key="M30" value="0.999864460404345" />
-      <entry key="H1" value="0.9999322279056441" />
-      <entry key="H2" value="0.9999661133786705" />
-      <entry key="H4" value="0.9999830565457949" />
-      <entry key="D1" value="0.9999971760710294" />
-      <entry key="W1" value="0.9999995965810874" />
+      <entry key="MS100" value="0.959264779796927" />
+      <entry key="MS500" value="1.0504391623702918" />
+      <entry key="S2" value="1.7460971198559447" />
+      <entry key="S5" value="3.1522879980476515" />
+      <entry key="S10" value="4.936209438230607" />
+      <entry key="S30" value="7.968460586636465" />
+      <entry key="S60" value="9.287844002645546" />
+      <entry key="M2" value="10.086856619352085" />
+      <entry key="M5" value="10.619861350982834" />
+      <entry key="M10" value="10.807343768549993" />
+      <entry key="M15" value="10.870979440207192" />
+      <entry key="M30" value="10.935196103105206" />
+      <entry key="H1" value="10.96752425428692" />
+      <entry key="H2" value="10.983743628449522" />
+      <entry key="H4" value="10.991867183363357" />
+      <entry key="D1" value="10.998643886859425" />
+      <entry key="W1" value="10.999806253780376" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -112,111 +112,30 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "CidrDebugProfileConversion": "true",
-    "JavaScript 调试.index.html.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.RadMigrateCodeStyle": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.cidr.known.project.marker": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.readMode.enableVisualFormatting": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "cidr.known.project.marker": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "main",
-    "kotlin-language-version-configured": "true",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "reference.settingsdialog.IDE.editor.colors.TypeScript",
-    "ts.external.directory.path": "F:\\IntelliJ IDEA 2026.2.0.1\\plugins\\javascript-plugin\\jsLanguageServicesImpl\\external"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
+    &quot;JavaScript 调试.index.html.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.RadMigrateCodeStyle&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;reference.settingsdialog.IDE.editor.colors.TypeScript&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;F:\\IntelliJ IDEA 2026.2.0.1\\plugins\\javascript-plugin\\jsLanguageServicesImpl\\external&quot;
   }
-}]]></component>
-  <component name="RunManager">
-    <configuration default="true" type="Application" factoryName="Application">
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-    <configuration default="true" type="JetRunConfigurationType">
-      <module name="CCZU All-knowing" />
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-    <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
-      <module name="CCZU All-knowing" />
-      <option name="filePath" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="PythonConfigurationType" factoryName="Python">
-      <module name="CCZU All-knowing" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <option name="SCRIPT_NAME" value="" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="Tox" factoryName="Tox">
-      <module name="CCZU All-knowing" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration default="true" type="ccruntests" factoryName="Run Study Tests">
-      <module name="CCZU All-knowing" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="DEBUG_JUST_MY_CODE" value="false" />
-      <option name="RUN_TOOL" value="" />
-      <option name="SCRIPT_NAME" value="" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <option name="studyTest" value="" />
-      <method v="2" />
-    </configuration>
-  </component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -253,6 +172,7 @@
     <MESSAGE value="20261104002 初次提交" />
     <MESSAGE value="20261105001 初次提交" />
     <MESSAGE value="20261106001 功能几乎已经完善，开始准备精细化调整" />
-    <option name="LAST_COMMIT_MESSAGE" value="20261106001 功能几乎已经完善，开始准备精细化调整" />
+    <MESSAGE value="20261107001 新增网络搜索，修改回答结果的过滤规则" />
+    <option name="LAST_COMMIT_MESSAGE" value="20261107001 新增网络搜索，修改回答结果的过滤规则" />
   </component>
 </project>

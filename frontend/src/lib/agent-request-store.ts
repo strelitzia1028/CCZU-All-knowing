@@ -17,6 +17,9 @@ export interface AgentRequestSnapshot {
   message: string;
   sessionId: string | null;
   content: string;
+  reasoningContent: string;
+  reasoningPhase: 'idle' | 'running' | 'completed' | 'error';
+  reasoningError?: string;
   category?: string;
   extractedTags: string[];
   sources: RetrievalSource[];
@@ -96,6 +99,14 @@ export function loadAgentRequest(
         ...snapshot,
         phase: 'error',
         error: '请求因页面刷新已中断，请重新发送。',
+        reasoningPhase:
+          snapshot.reasoningPhase === 'running'
+            ? 'error'
+            : snapshot.reasoningPhase,
+        reasoningError:
+          snapshot.reasoningPhase === 'running'
+            ? 'AI 推理补充因页面刷新已中断。'
+            : snapshot.reasoningError,
         updatedAt: Date.now(),
       };
       writeSnapshot(interrupted);
@@ -165,6 +176,8 @@ export async function startAgentRequest(options: StartAgentRequestOptions) {
     message: options.message,
     sessionId: options.sessionId,
     content: '',
+    reasoningContent: '',
+    reasoningPhase: 'idle',
     extractedTags: [],
     sources: [],
     communitySources: [],
@@ -267,6 +280,45 @@ export async function startAgentRequest(options: StartAgentRequestOptions) {
           };
           publish(snapshot);
         } else if (
+          event.type === 'reasoning_started'
+        ) {
+          snapshot = {
+            ...snapshot,
+            reasoningPhase: 'running',
+            reasoningError: undefined,
+            updatedAt: Date.now(),
+          };
+          publish(snapshot);
+        } else if (
+          event.type === 'reasoning_chunk' &&
+          typeof event.content === 'string'
+        ) {
+          snapshot = {
+            ...snapshot,
+            reasoningContent:
+              snapshot.reasoningContent + event.content,
+            updatedAt: Date.now(),
+          };
+          publish(snapshot);
+        } else if (event.type === 'reasoning_done') {
+          snapshot = {
+            ...snapshot,
+            reasoningPhase: 'completed',
+            updatedAt: Date.now(),
+          };
+          publish(snapshot);
+        } else if (event.type === 'reasoning_error') {
+          snapshot = {
+            ...snapshot,
+            reasoningPhase: 'error',
+            reasoningError:
+              typeof event.error === 'string'
+                ? event.error
+                : 'AI 推理补充生成失败',
+            updatedAt: Date.now(),
+          };
+          publish(snapshot);
+        } else if (
           event.type === 'chunk' &&
           typeof event.content === 'string'
         ) {
@@ -289,6 +341,10 @@ export async function startAgentRequest(options: StartAgentRequestOptions) {
     snapshot = {
       ...snapshot,
       phase: 'completed',
+      reasoningPhase:
+        snapshot.reasoningPhase === 'running'
+          ? 'completed'
+          : snapshot.reasoningPhase,
       updatedAt: Date.now(),
     };
     publish(snapshot);

@@ -40,6 +40,8 @@ interface SearchParams {
   tagNames?: string[]
   keywords?: string[]
   entities?: SearchEntities
+  limit?: number
+  threshold?: number
 }
 
 interface KnowledgeRow {
@@ -73,6 +75,8 @@ export async function searchKnowledgeDetailed({
   tagNames = [],
   keywords = [],
   entities = EMPTY_ENTITIES,
+  limit = 3,
+  threshold = SEARCH_MATCH_THRESHOLD,
 }: SearchParams): Promise<KnowledgeSearchOutcome> {
   const rows = await query<KnowledgeRow>(
     `SELECT
@@ -143,8 +147,8 @@ export async function searchKnowledgeDetailed({
     candidates,
     profiles,
     question,
-    SEARCH_MATCH_THRESHOLD,
-    3
+    threshold,
+    limit
   )
 
   return {

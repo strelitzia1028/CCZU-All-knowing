@@ -19,6 +19,7 @@ import {
   LoaderCircle,
   MapPin,
   Search,
+  ShieldCheck,
   Sparkles,
   Tag,
   Trash2,
@@ -81,6 +82,9 @@ interface Message {
   draftSuperseded?: boolean;
   catalogRequests?: CreatedCatalogRequest[];
   cardsRevealPlayed?: boolean;
+  reasoningContent?: string;
+  reasoningPhase?: 'idle' | 'running' | 'completed' | 'error';
+  reasoningError?: string;
   isStreaming?: boolean;
 }
 
@@ -174,6 +178,9 @@ function applyAgentSnapshotToMessages(
         : 'proposed'
       : existing?.draftStatus,
     catalogRequests: snapshot.catalogRequests,
+    reasoningContent: snapshot.reasoningContent,
+    reasoningPhase: snapshot.reasoningPhase,
+    reasoningError: snapshot.reasoningError,
     isStreaming: snapshot.phase === 'running',
   };
 
@@ -333,6 +340,14 @@ function readStoredConversation(userId: string): StoredConversation | null {
         ...message,
         isStreaming: false,
         cardsRevealPlayed: true,
+        reasoningPhase:
+          message.reasoningPhase === 'running'
+            ? 'error'
+            : message.reasoningPhase,
+        reasoningError:
+          message.reasoningPhase === 'running'
+            ? 'AI 推理补充因页面刷新已中断。'
+            : message.reasoningError,
         draftStatus: message.draftSourceId
           ? 'syncing'
           : normalizeDraftStatus(message.draftStatus),
@@ -876,19 +891,79 @@ export default function ChatPage() {
                     )}
 
                   {(message.content || message.isStreaming) && (
-                    <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                      {message.content ? (
-                        <div className="whitespace-pre-wrap text-sm leading-7 text-slate-800">
-                          {message.content}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-sm text-slate-400">
-                          <Sparkles className="h-4 w-4 animate-pulse text-blue-500" />
-                          Agent 正在思考并执行工具...
-                        </div>
-                      )}
+                    <div className="overflow-hidden rounded-lg border border-blue-100 bg-white shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-50 bg-blue-50/50 px-4 py-3">
+                        <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
+                          <ShieldCheck className="h-4 w-4 text-blue-600" />
+                          严格依据回答
+                        </span>
+                        <span className="rounded bg-white px-2 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-blue-100">
+                          知识库 / 信息源限定
+                        </span>
+                      </div>
+                      <div className="px-4 py-4">
+                        {message.content ? (
+                          <div className="whitespace-pre-wrap text-sm leading-7 text-slate-800">
+                            {message.content}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-slate-400">
+                            <Sparkles className="h-4 w-4 animate-pulse text-blue-500" />
+                            Agent 正在思考并执行工具...
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
+
+                  {message.category !== 'smalltalk' &&
+                    message.reasoningPhase &&
+                    message.reasoningPhase !== 'idle' && (
+                      <details className="group overflow-hidden rounded-lg border border-amber-200 bg-white shadow-sm">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm text-slate-700">
+                          <span className="flex flex-wrap items-center gap-2 font-medium">
+                            <Sparkles className="h-4 w-4 text-amber-600" />
+                            AI 推理补充
+                            <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-100">
+                              可读取知识库实际数据
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2">
+                            {message.reasoningPhase === 'running' && (
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin text-amber-600" />
+                            )}
+                            <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+                          </span>
+                        </summary>
+                        <div className="border-t border-amber-100 px-4 py-4">
+                          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                            本区可以引用已审核知识库和社区信息源，也包含 AI 的组合与推理。涉及现场状态、预约方式、价格和联系方式时，请再次核实。
+                          </p>
+                          {message.reasoningContent && (
+                            <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                              {message.reasoningContent}
+                            </div>
+                          )}
+                          {message.reasoningPhase === 'error' ? (
+                            <p className="mt-3 text-sm text-red-600">
+                              {message.reasoningError ||
+                                'AI 推理补充生成失败，请稍后重试。'}
+                            </p>
+                          ) : message.reasoningPhase === 'running' &&
+                            !message.reasoningContent ? (
+                            <div className="mt-3 flex items-center gap-2 text-sm text-slate-400">
+                              <LoaderCircle className="h-4 w-4 animate-spin text-amber-600" />
+                              正在生成推理补充...
+                            </div>
+                          ) : message.reasoningPhase === 'completed' &&
+                            !message.reasoningContent ? (
+                            <p className="mt-3 text-sm text-slate-400">
+                              本轮没有生成推理补充。
+                            </p>
+                          ) : null}
+                        </div>
+                      </details>
+                    )}
 
                   {!message.isStreaming &&
                     message.extractedTags &&

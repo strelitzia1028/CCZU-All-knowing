@@ -20,6 +20,7 @@ import { PermanentDeleteDialog } from '@/components/permanent-delete-dialog';
 import { TagMultiSelect } from '@/components/tag-multi-select';
 import { AiAutoToggle } from '@/components/ai-auto-toggle';
 import { SearchFilterBar } from '@/components/search-filter-bar';
+import { useApp } from '@/components/app-provider';
 import {
   Dialog,
   DialogContent,
@@ -81,6 +82,8 @@ function isExpired(value: string) {
 }
 
 export default function KnowledgePage() {
+  const { user, isLoading: sessionLoading } = useApp();
+  const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -131,6 +134,11 @@ export default function KnowledgePage() {
   const [formError, setFormError] = useState('');
 
   const fetchItems = async () => {
+    if (!user) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -200,11 +208,19 @@ export default function KnowledgePage() {
   }, []);
 
   useEffect(() => {
+    if (sessionLoading) return;
+    if (!user) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     const timer = window.setTimeout(() => {
       void fetchItems();
     }, searchQuery ? 250 : 0);
     return () => window.clearTimeout(timer);
   }, [
+    sessionLoading,
+    user?.id,
     searchQuery,
     matchTitle,
     matchContent,
@@ -397,6 +413,7 @@ export default function KnowledgePage() {
   };
 
   const handleEdit = (item: KnowledgeItem) => {
+    if (!isAdmin) return;
     setEditing(item);
     setFormTitle(item.title);
     setFormContent(item.content);
@@ -423,6 +440,7 @@ export default function KnowledgePage() {
   };
 
   const handleSubmit = async () => {
+    if (!isAdmin) return;
     if (!formTitle.trim() || !formContent.trim()) {
       setFormError('标题和正文不能为空');
       return;
@@ -471,7 +489,7 @@ export default function KnowledgePage() {
   };
 
   const handleDelete = async () => {
-    if (!deleting) return;
+    if (!isAdmin || !deleting) return;
     setDeleteLoading(true);
     setDeleteError('');
     try {
@@ -535,23 +553,32 @@ export default function KnowledgePage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">
             <BookOpen className="h-6 w-6 text-blue-600" />
-            知识库管理
+            {isAdmin ? '知识库管理' : '知识库'}
+            {!isAdmin && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+                只读浏览
+              </span>
+            )}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            管理员可查看全部状态，并维护知识条目与待审核内容。
+            {isAdmin
+              ? '管理员可查看全部状态，并维护知识条目与待审核内容。'
+              : '浏览已审核的校园知识，可使用搜索、时间和 Tag 筛选。'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            resetForm();
-            setShowForm(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" />
-          新建条目
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setShowForm(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            新建条目
+          </button>
+        )}
       </div>
 
       {notice && (
@@ -567,19 +594,26 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2">
+      <div
+        className={cn(
+          'mb-5 grid gap-3',
+          isAdmin ? 'sm:grid-cols-2' : 'sm:grid-cols-1'
+        )}
+      >
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
           <div className="text-xs text-slate-400">知识条目</div>
           <div className="mt-1 text-2xl font-semibold text-slate-900">
             {items.length}
           </div>
         </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <div className="text-xs text-amber-700">待审核</div>
-          <div className="mt-1 text-2xl font-semibold text-amber-800">
-            {pendingCount}
+        {isAdmin && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="text-xs text-amber-700">待审核</div>
+            <div className="mt-1 text-2xl font-semibold text-amber-800">
+              {pendingCount}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="mb-5">
@@ -700,7 +734,7 @@ export default function KnowledgePage() {
         </div>
       </div>
 
-      {showForm && (
+      {isAdmin && showForm && (
         <div className="mb-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h2 className="text-lg font-semibold text-slate-900">
             {editing ? '编辑知识条目' : '新建知识条目'}
@@ -926,7 +960,11 @@ export default function KnowledgePage() {
       )}
 
       <div className="space-y-3">
-        {loading ? (
+        {!sessionLoading && !user ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-500">
+            请先登录后浏览知识库。
+          </div>
+        ) : loading ? (
           <div className="py-16 text-center text-sm text-slate-400">
             正在加载知识库...
           </div>
@@ -934,7 +972,9 @@ export default function KnowledgePage() {
           <div className="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-500">
             {hasActiveFilters
               ? '没有匹配的知识条目'
-              : '知识库暂无条目，可从信息源转存或手动新建。'}
+              : isAdmin
+                ? '知识库暂无条目，可从信息源转存或手动新建。'
+                : '知识库暂无已审核条目。'}
           </div>
         ) : (
           items.map((item) => (
@@ -1000,31 +1040,33 @@ export default function KnowledgePage() {
                     )}
                   </div>
                 </div>
-                <div
-                  className="flex shrink-0 flex-wrap justify-end gap-1.5"
-                  onClick={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => event.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(item)}
-                    className="inline-flex items-center gap-1 rounded bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
+                {isAdmin && (
+                  <div
+                    className="flex shrink-0 flex-wrap justify-end gap-1.5"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
                   >
-                    <FilePenLine className="h-3.5 w-3.5" />
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleting(item);
-                      setDeleteError('');
-                    }}
-                    className="inline-flex items-center gap-1 rounded bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    删除
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(item)}
+                      className="inline-flex items-center gap-1 rounded bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
+                    >
+                      <FilePenLine className="h-3.5 w-3.5" />
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleting(item);
+                        setDeleteError('');
+                      }}
+                      className="inline-flex items-center gap-1 rounded bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      删除
+                    </button>
+                  </div>
+                )}
               </div>
             </article>
           ))
@@ -1089,27 +1131,39 @@ export default function KnowledgePage() {
                   </div>
                 )}
                 <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDetailOpen(false);
-                      handleEdit(viewing);
-                    }}
-                    className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleting(viewing);
-                      setDetailOpen(false);
-                      setDeleteError('');
-                    }}
-                    className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
-                  >
-                    永久删除
-                  </button>
+                  {isAdmin ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailOpen(false);
+                          handleEdit(viewing);
+                        }}
+                        className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleting(viewing);
+                          setDetailOpen(false);
+                          setDeleteError('');
+                        }}
+                        className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+                      >
+                        永久删除
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setDetailOpen(false)}
+                      className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+                    >
+                      关闭
+                    </button>
+                  )}
                 </div>
               </div>
             </>
@@ -1118,7 +1172,7 @@ export default function KnowledgePage() {
       </Dialog>
 
       <PermanentDeleteDialog
-        open={Boolean(deleting)}
+        open={isAdmin && Boolean(deleting)}
         itemName={deleting?.title || ''}
         loading={deleteLoading}
         error={deleteError}

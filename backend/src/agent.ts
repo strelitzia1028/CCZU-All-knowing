@@ -23,6 +23,7 @@ import {
   type CreatedCatalogRequest,
   type SourceTypeSuggestion,
 } from './catalog-requests.js'
+import type { WebSearchResult } from './web-search.js'
 
 export type AgentIntent =
   | 'search'
@@ -696,7 +697,11 @@ ${formatHistory(history)}
 
 async function searchCommunitySources(
   plan: AgentPlan,
-  sourceTypes: SourceTypeRow[]
+  sourceTypes: SourceTypeRow[],
+  options: {
+    limit?: number
+    threshold?: number
+  } = {}
 ): Promise<{
   results: CommunitySourceResult[]
   attempts: SearchAttemptSummary[]
@@ -815,8 +820,8 @@ async function searchCommunitySources(
     candidates,
     profiles,
     plan.query,
-    SEARCH_MATCH_THRESHOLD,
-    8
+    options.threshold ?? SEARCH_MATCH_THRESHOLD,
+    options.limit ?? 8
   )
 
   return {
@@ -828,6 +833,220 @@ async function searchCommunitySources(
       })
     ),
     attempts: ranked.attempts,
+  }
+}
+
+export async function prepareReasoningRetrieval(
+  context: AgentContext
+): Promise<{
+  knowledgeResults: KnowledgeSearchResult[]
+  communitySources: CommunitySourceResult[]
+}> {
+  const sourceTypes = await query<SourceTypeRow>(
+    `SELECT id, value, label, description, status, created_at
+     FROM source_types
+     WHERE status = 'active'
+     ORDER BY created_at ASC`
+  )
+
+  const [knowledge, sources] = await Promise.all([
+    searchKnowledgeDetailed({
+      question: context.plan.query,
+      tagNames: context.plan.tags,
+      keywords: context.plan.keywords,
+      entities: context.plan.entities,
+      threshold: 15,
+      limit: 10,
+    }),
+    searchCommunitySources(context.plan, sourceTypes, {
+      threshold: 15,
+      limit: 12,
+    }),
+  ])
+
+  const knowledgeById = new Map(
+    context.knowledgeResults.map((item) => [item.id, item])
+  )
+  for (const item of knowledge.results) {
+    if (!knowledgeById.has(item.id)) knowledgeById.set(item.id, item)
+  }
+
+  const sourceById = new Map(
+    context.communitySources.map((item) => [item.id, item])
+  )
+  for (const item of sources.results) {
+    if (!sourceById.has(item.id)) sourceById.set(item.id, item)
+  }
+
+  if (knowledgeById.size < 8) {
+    const recentKnowledge = await query<{
+      id: string
+      title: string
+      content: string
+      source_level: string
+      review_status: string
+      updated_at: Date | string
+      knowledge_item_tags: Array<{
+        tag_id: string
+        tags: {
+          id: string
+          name: string
+          description: string | null
+        }
+      }> | null
+    }>(
+      `SELECT
+         ki.id,
+         ki.title,
+         ki.content,
+         ki.source_level,
+         ki.review_status,
+         ki.updated_at,
+         COALESCE(
+           json_agg(
+             json_build_object(
+               'tag_id', kit.tag_id,
+               'tags', json_build_object(
+                 'id', t.id,
+                 'name', t.name,
+                 'description', t.description
+               )
+             )
+             ORDER BY t.name
+           ) FILTER (WHERE kit.tag_id IS NOT NULL),
+           '[]'::json
+         ) AS knowledge_item_tags
+       FROM knowledge_items ki
+       LEFT JOIN knowledge_item_tags kit ON kit.knowledge_item_id = ki.id
+       LEFT JOIN tags t ON t.id = kit.tag_id
+       WHERE ki.review_status = 'approved'
+       GROUP BY ki.id
+       ORDER BY ki.updated_at DESC
+       LIMIT 12`
+    )
+    for (const item of recentKnowledge) {
+      if (knowledgeById.has(item.id)) continue
+      const tags =
+        item.knowledge_item_tags
+          ?.map((entry) => entry.tags)
+          .filter(Boolean) || []
+      knowledgeById.set(item.id, {
+        id: item.id,
+        title: item.title,
+        content: item.content,
+        sanitized_content: sanitizeKnowledgeContent(item.content),
+        source_level: item.source_level,
+        review_status: item.review_status,
+        updated_at:
+          item.updated_at instanceof Date
+            ? item.updated_at.toISOString()
+            : item.updated_at,
+        tags,
+        tag_match: 0,
+        overall_match: 0,
+      })
+    }
+  }
+
+  if (sourceById.size < 6) {
+    const recentSources = await query<{
+      id: string
+      title: string
+      content: string
+      type: string
+      location: string | null
+      valid_until: Date | string | null
+      is_expired: boolean
+      created_by: string
+      allow_discussion: boolean
+      created_at: Date | string
+      display_name: string | null
+      source_tags: Array<{
+        tag_id: string
+        tags: {
+          id: string
+          name: string
+          description: string | null
+        }
+      }> | null
+    }>(
+      `SELECT
+         s.id,
+         s.title,
+         s.content,
+         s.type,
+         s.location,
+         s.valid_until,
+         (s.valid_until IS NOT NULL AND s.valid_until <= NOW()) AS is_expired,
+         s.created_by,
+         s.allow_discussion,
+         s.created_at,
+         p.display_name,
+         COALESCE(
+           json_agg(
+             json_build_object(
+               'tag_id', st.tag_id,
+               'tags', json_build_object(
+                 'id', t.id,
+                 'name', t.name,
+                 'description', t.description
+               )
+             )
+             ORDER BY t.name
+           ) FILTER (WHERE st.tag_id IS NOT NULL),
+           '[]'::json
+         ) AS source_tags
+       FROM sources s
+       LEFT JOIN profiles p ON p.id = s.created_by
+       LEFT JOIN source_tags st ON st.source_id = s.id
+       LEFT JOIN tags t ON t.id = st.tag_id
+       WHERE s.status = 'approved'
+         AND (s.valid_until IS NULL OR s.valid_until > NOW())
+       GROUP BY s.id, p.id
+       ORDER BY s.created_at DESC
+       LIMIT 12`
+    )
+    const typeLabelMap = new Map(
+      sourceTypes.map((sourceType) => [sourceType.value, sourceType.label])
+    )
+    for (const item of recentSources) {
+      if (sourceById.has(item.id)) continue
+      const tags =
+        item.source_tags?.map((entry) => entry.tags).filter(Boolean) || []
+      sourceById.set(item.id, {
+        id: item.id,
+        title: item.title,
+        content: sanitizeKnowledgeContent(item.content),
+        excerpt:
+          sanitizeKnowledgeContent(item.content)
+            .replace(/\s+/g, ' ')
+            .slice(0, 180) +
+          (item.content.length > 180 ? '...' : ''),
+        type: item.type,
+        type_label: typeLabelMap.get(item.type) || item.type,
+        location: item.location,
+        valid_until:
+          item.valid_until instanceof Date
+            ? item.valid_until.toISOString()
+            : item.valid_until,
+        is_expired: item.is_expired,
+        overall_match: 0,
+        tag_match: 0,
+        created_at:
+          item.created_at instanceof Date
+            ? item.created_at.toISOString()
+            : item.created_at,
+        author: item.display_name || '社区用户',
+        created_by: item.created_by,
+        allow_discussion: item.allow_discussion,
+        tags,
+      })
+    }
+  }
+
+  return {
+    knowledgeResults: [...knowledgeById.values()].slice(0, 10),
+    communitySources: [...sourceById.values()].slice(0, 12),
   }
 }
 
@@ -1645,4 +1864,197 @@ export function buildAgentMessages(
     { role: 'system', content: buildAgentAnswerPrompt(context) },
     { role: 'user', content: message },
   ]
+}
+
+export function buildReasoningMessages(
+  context: AgentContext,
+  message: string,
+  retrieval: {
+    knowledgeResults: KnowledgeSearchResult[]
+    communitySources: CommunitySourceResult[]
+    webResults: WebSearchResult[]
+  }
+): LlmMessage[] {
+  const evidenceSections: string[] = []
+  if (retrieval.knowledgeResults.length > 0) {
+    evidenceSections.push(
+      `补充知识素材：\n${retrieval.knowledgeResults
+        .map(
+          (item, index) =>
+            `[补充知识${index + 1}] ${item.title}\n来源等级：${item.source_level}\nTag：${item.tags.map((tag) => tag.name).join('、') || '无'}\n知识库实际内容：${item.sanitized_content.slice(0, 2500)}`
+        )
+        .join('\n---\n')}`
+    )
+  }
+  if (retrieval.communitySources.length > 0) {
+    evidenceSections.push(
+      `补充社区素材：\n${retrieval.communitySources
+        .map(
+          (item, index) =>
+            `[补充社区${index + 1}] ${item.title}\n类型：${item.type_label}\n地点：${item.location || '未填写'}\n有效期：${item.valid_until || '长期有效'}\nTag：${item.tags.map((tag) => tag.name).join('、') || '无'}\n内容摘要：${item.content.slice(0, 700)}`
+        )
+        .join('\n---\n')}`
+    )
+  }
+  if (retrieval.webResults.length > 0) {
+    evidenceSections.push(
+      `补充网络素材：\n${retrieval.webResults
+        .map(
+          (item, index) =>
+            `[网络${index + 1}] ${item.title}\n来源：${item.source}\n链接：${item.url}\n摘要：${item.snippet || '无摘要'}`
+        )
+        .join('\n---\n')}`
+    )
+  }
+  const webCitationRule =
+    retrieval.webResults.length > 0
+      ? '\n12. 本轮已有网络补充素材。采用其中信息时，至少一处必须明确写“网络检索：标题”；不得只写“网上说”。'
+      : ''
+
+  return [
+    {
+      role: 'system',
+      content: `你是「CCZU All-knowing」的 AI 推理补充助手。你的回答会单独显示在默认折叠的“AI 推理补充”区域中，不会替代严格依据回答。
+
+严格依据回答已经单独生成。你看不到它的正文，也不要假设它具体写了什么。系统为你额外提供了知识库/社区广域检索素材和网络搜索结果，用于行程规划、广域搜索推荐和补充建议。
+
+补充权限：
+1. 下方“补充知识素材”来自平台已审核知识库，属于可用于回答的实际数据。你可以直接引用其中的事实、地点、时间、类型和 Tag。
+2. 你可以基于知识库实际内容进行组合、排序、比较、行程规划和广域搜索推荐。
+3. 社区信息源属于已审核社区内容，可能随时间失效；引用时应提醒核实当前状态。
+4. 网络素材可以用于补充周边推荐、交通方式、活动线索和行程规划，但必须注明“网络检索：标题”；网络摘要可能过时，涉及价格、营业时间、预约和政策时必须提示待核实。
+5. 可以对“先去哪里、再去哪里、哪些类型适合组合、有哪些备选方案”给出建议，但不得声称场地一定可用或活动一定存在。
+6. 知识库、社区和网络素材之外由你补充的通用经验或推测，必须明确写成“待核实”。
+7. 不得编造素材中没有的人员姓名、联系电话、精确价格、精确开放时间、房间号或政策结论。
+8. 不得声称已经联系、发布、修改、审核或完成任何操作。
+9. 不要求使用编号引用；如采用具体素材，可直接提及知识、社区或网络来源标题。
+10. 如涉及人身危险，优先建议联系急救、校园保卫或可信的现场人员。
+11. 使用简体中文，简洁实用，输出 2 至 5 条补充要点，不使用 Markdown 标题。${webCitationRule}
+
+规范化需求：
+${context.plan.need_summary}
+
+${
+  evidenceSections.length > 0
+    ? evidenceSections.join('\n\n')
+    : '本轮没有可用于补充推理的检索素材。'
+}`,
+    },
+    { role: 'user', content: message },
+  ]
+}
+
+function genericReasoningFallback(
+  context: AgentContext,
+  retrieval: {
+    knowledgeResults: KnowledgeSearchResult[]
+    communitySources: CommunitySourceResult[]
+    webResults: WebSearchResult[]
+  }
+): string {
+  const materialTitles = [
+    ...retrieval.knowledgeResults.map((item) => item.title),
+    ...retrieval.communitySources.map((item) => item.title),
+    ...retrieval.webResults.map((item) => item.title),
+  ]
+    .filter((title, index, titles) => titles.indexOf(title) === index)
+    .slice(0, 5)
+
+  return [
+    '1. 先确认时间、人数、预算、可接受距离和活动强度，再拆分“主活动 + 用餐或休息 + 备选方案”。',
+    materialTitles.length > 0
+      ? `2. 可优先核对补充检索到的素材：${materialTitles.join('、')}；确认其当前状态后再纳入行程。`
+      : '2. 当前没有足够的补充检索素材，建议先缩小需求范围后重新检索。',
+    '3. 对场地开放、预约方式、价格和活动是否仍有效，通过学校官方渠道再次核实。',
+    '4. 至少准备一个时间或地点替代方案，避免临时预约失败影响整体安排。',
+    `5. 本轮需求是“${context.plan.need_summary.slice(0, 80)}”，以上仅为规划思路，不构成已核实事实。`,
+  ].join('\n')
+}
+
+export function finalizeReasoningSupplement(
+  text: string,
+  context: AgentContext,
+  message: string,
+  retrieval: {
+    knowledgeResults: KnowledgeSearchResult[]
+    communitySources: CommunitySourceResult[]
+    webResults: WebSearchResult[]
+  }
+): string {
+  const normalized = text
+    .replace(/\*\*/g, '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .trim()
+
+  const evidenceText = [
+    message,
+    context.plan.need_summary,
+    ...retrieval.knowledgeResults.flatMap((item) => [
+      item.title,
+      item.content,
+      ...item.tags.map((tag) => `${tag.name} ${tag.description || ''}`),
+    ]),
+    ...retrieval.communitySources.flatMap((item) => [
+      item.title,
+      item.content,
+      item.location || '',
+      ...item.tags.map((tag) => `${tag.name} ${tag.description || ''}`),
+    ]),
+    ...retrieval.webResults.flatMap((item) => [
+      item.title,
+      item.snippet,
+      item.url,
+    ]),
+  ].join('\n')
+
+  const phoneNumbers = normalized.match(/1[3-9]\d{9}/g) || []
+  const unsupportedPhone = phoneNumbers.some(
+    (phone) => !evidenceText.includes(phone)
+  )
+
+  const teacherNames = [
+    ...normalized.matchAll(/([\u4e00-\u9fa5]{1,3})老师/g),
+  ].map((match) => match[0])
+  const unsupportedTeacher = teacherNames.some(
+    (teacher) => !evidenceText.includes(teacher)
+  )
+
+  const venueNames = [
+    ...normalized.matchAll(
+      /[\u4e00-\u9fa5A-Za-z0-9]{2,20}(?:餐厅|食堂|咖啡馆|咖啡厅|驿站|广场|书店)/g
+    ),
+  ].map((match) => match[0])
+  const unsupportedVenue = venueNames.some(
+    (venue) =>
+      !evidenceText.includes(venue) &&
+      !/校园|校内|学校|学生/.test(venue)
+  )
+
+  const blockNumbers = [
+    ...normalized.matchAll(/[一二三四五六七八九十\d]+号楼/g),
+  ].map((match) => match[0])
+  const unsupportedBuilding = blockNumbers.some(
+    (building) => !evidenceText.includes(building)
+  )
+
+  let finalized: string
+  if (
+    !normalized ||
+    unsupportedPhone ||
+    unsupportedTeacher ||
+    unsupportedVenue ||
+    unsupportedBuilding
+  ) {
+    finalized = genericReasoningFallback(context, retrieval)
+  } else {
+    finalized = normalized
+  }
+
+  if (retrieval.webResults.length === 0) return finalized
+
+  const webSources = retrieval.webResults
+    .slice(0, 3)
+    .map((item) => `《${item.title}》（${item.source}）`)
+    .join('；')
+  return `${finalized}\n\n网络检索：${webSources}`
 }
