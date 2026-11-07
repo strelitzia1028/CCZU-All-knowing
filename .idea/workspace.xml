@@ -17,7 +17,7 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7a564ce2-3407-4b92-a21a-efd4280d30a7" name="更改" comment="20261107001 新增网络搜索，修改回答结果的过滤规则" />
+    <list default="true" id="7a564ce2-3407-4b92-a21a-efd4280d30a7" name="更改" comment="20261107003 最终完善" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -173,6 +173,8 @@
     <MESSAGE value="20261105001 初次提交" />
     <MESSAGE value="20261106001 功能几乎已经完善，开始准备精细化调整" />
     <MESSAGE value="20261107001 新增网络搜索，修改回答结果的过滤规则" />
-    <option name="LAST_COMMIT_MESSAGE" value="20261107001 新增网络搜索，修改回答结果的过滤规则" />
+    <MESSAGE value="20261107002 新增tag合理性筛查" />
+    <MESSAGE value="20261107003 最终完善" />
+    <option name="LAST_COMMIT_MESSAGE" value="20261107003 最终完善" />
   </component>
 </project>

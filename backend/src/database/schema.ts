@@ -80,7 +80,7 @@ export const knowledgeItemTags = pgTable(
 	{
 		id: serial().primaryKey(),
 		knowledge_item_id: varchar("knowledge_item_id", { length: 36 }).notNull().references(() => knowledgeItems.id, { onDelete: "cascade" }),
-		tag_id: varchar("tag_id", { length: 36 }).notNull().references(() => tags.id),
+		tag_id: varchar("tag_id", { length: 36 }).notNull().references(() => tags.id, { onDelete: "cascade" }),
 	},
 	(table) => [
 		index("kit_knowledge_item_id_idx").on(table.knowledge_item_id),
@@ -119,7 +119,7 @@ export const sourceTags = pgTable(
 	{
 		id: serial().primaryKey(),
 		source_id: varchar("source_id", { length: 36 }).notNull().references(() => sources.id, { onDelete: "cascade" }),
-		tag_id: varchar("tag_id", { length: 36 }).notNull().references(() => tags.id),
+		tag_id: varchar("tag_id", { length: 36 }).notNull().references(() => tags.id, { onDelete: "cascade" }),
 	},
 	(table) => [
 		index("st_source_id_idx").on(table.source_id),

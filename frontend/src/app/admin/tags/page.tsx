@@ -364,6 +364,7 @@ export default function TagsPage() {
       <PermanentDeleteDialog
         open={Boolean(deletingTag)}
         itemName={deletingTag?.name || ''}
+        detail="所有信息源和知识库中的该 Tag 引用也会一并清除，此操作无法撤销。"
         loading={deleteLoading}
         error={deleteError}
         onCancel={() => {

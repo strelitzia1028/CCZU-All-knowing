@@ -6,6 +6,7 @@ import { TriangleAlert } from 'lucide-react';
 interface PermanentDeleteDialogProps {
   open: boolean;
   itemName: string;
+  detail?: string;
   loading?: boolean;
   error?: string;
   onCancel: () => void;
@@ -15,6 +16,7 @@ interface PermanentDeleteDialogProps {
 export function PermanentDeleteDialog({
   open,
   itemName,
+  detail,
   loading = false,
   error,
   onCancel,
@@ -45,7 +47,7 @@ export function PermanentDeleteDialog({
               “{itemName}”将被永久删除，你确定要这么做吗？
             </p>
             <p className="mt-1 text-xs text-red-500">
-              此操作无法撤销。
+              {detail || '此操作无法撤销。'}
             </p>
           </div>
         </div>

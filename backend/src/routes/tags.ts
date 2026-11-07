@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncRoute, sendApiError } from '../http.js';
-import { query } from '../db.js';
+import { query, withTransaction } from '../db.js';
 import { getCurrentUser, requireAdmin } from '../session.js';
 import {
   suggestTagsFromAllowed,
@@ -210,17 +210,74 @@ tagsRouter.delete(
   '/:id',
   asyncRoute(async (request, response) => {
     try {
-      await requireAdmin(request);
-      const rows = await query<{ id: string }>(
-        `DELETE FROM tags
-         WHERE id = $1
-         RETURNING id`,
-        [request.params.id]
-      );
-      if (!rows[0]) {
+      const admin = await requireAdmin(request);
+      const result = await withTransaction(async (client) => {
+        const tagRows = await client.query<{
+          id: string;
+          name: string;
+        }>(
+          `SELECT id, name
+           FROM tags
+           WHERE id = $1
+           FOR UPDATE`,
+          [request.params.id]
+        );
+        const tag = tagRows.rows[0];
+        if (!tag) return null;
+
+        const sourceReferences = await client.query(
+          `DELETE FROM source_tags
+           WHERE tag_id = $1`,
+          [tag.id]
+        );
+        const knowledgeReferences = await client.query(
+          `DELETE FROM knowledge_item_tags
+           WHERE tag_id = $1`,
+          [tag.id]
+        );
+        await client.query(
+          `UPDATE catalog_requests
+           SET target_id = NULL
+           WHERE request_type = 'tag'
+             AND target_id = $1`,
+          [tag.id]
+        );
+        await client.query(
+          `DELETE FROM tags
+           WHERE id = $1`,
+          [tag.id]
+        );
+        await client.query(
+          `INSERT INTO audit_logs
+             (id, actor_id, action, target_type, target_id, detail)
+           VALUES ($1, $2, 'delete_tag', 'tag', $3, $4)`,
+          [
+            crypto.randomUUID(),
+            admin.id,
+            tag.id,
+            JSON.stringify({
+              name: tag.name,
+              source_references: sourceReferences.rowCount || 0,
+              knowledge_references: knowledgeReferences.rowCount || 0,
+            }),
+          ]
+        );
+
+        return {
+          id: tag.id,
+          name: tag.name,
+          source_references: sourceReferences.rowCount || 0,
+          knowledge_references: knowledgeReferences.rowCount || 0,
+        };
+      });
+
+      if (!result) {
         return response.status(404).json({ error: '标签不存在' });
       }
-      return response.json({ success: true });
+      return response.json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       return sendApiError(response, error, '删除标签失败');
     }
