@@ -1,5 +1,9 @@
 import { query } from './db.js'
 import { isExcludedTerm } from './search-exclusions.js'
+import {
+  isCoveredByExistingTag,
+  isValidStandaloneTagName,
+} from './tag-governance.js'
 
 export interface CatalogRequestSuggestion {
   request_type: 'tag' | 'source_type'
@@ -27,10 +31,11 @@ function cleanTagNames(tagNames: string[]): string[] {
           (name) =>
             name.length >= 2 &&
             name.length <= 20 &&
-            !isExcludedTerm(name)
+            !isExcludedTerm(name) &&
+            isValidStandaloneTagName(name)
         )
     ),
-  ].slice(0, 5)
+  ].slice(0, 1)
 }
 
 export async function queueCatalogRequests(
@@ -39,8 +44,19 @@ export async function queueCatalogRequests(
   sourceType?: SourceTypeSuggestion | null
 ): Promise<CreatedCatalogRequest[]> {
   const created: CreatedCatalogRequest[] = []
+  const activeTags = await query<{
+    name: string
+    description: string | null
+  }>(
+    `SELECT name, description
+     FROM tags
+     WHERE status = 'active'`
+  )
+  const safeTagNames = cleanTagNames(tagNames).filter(
+    (name) => !isCoveredByExistingTag(name, activeTags)
+  )
 
-  for (const name of cleanTagNames(tagNames)) {
+  for (const name of safeTagNames) {
     const activeTag = await query<{ id: string }>(
       `SELECT id
        FROM tags
@@ -57,7 +73,11 @@ export async function queueCatalogRequests(
        FROM catalog_requests
        WHERE request_type = 'tag'
          AND status = 'pending'
-         AND lower(name) = lower($1)
+         AND (
+           lower(name) = lower($1)
+           OR lower(name) LIKE '%' || lower($1) || '%'
+           OR lower($1) LIKE '%' || lower(name) || '%'
+         )
        LIMIT 1`,
       [name]
     )

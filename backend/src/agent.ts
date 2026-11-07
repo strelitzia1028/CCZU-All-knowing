@@ -6,7 +6,11 @@ import {
   type KnowledgeSearchResult,
   type SearchAttemptSummary,
 } from './knowledge-search.js'
-import { completeChat, type LlmMessage } from './llm.js'
+import {
+  completeChat,
+  reviewDraftTagPlan,
+  type LlmMessage,
+} from './llm.js'
 import {
   createMatchProfiles,
   rankWithProfiles,
@@ -24,6 +28,10 @@ import {
   type SourceTypeSuggestion,
 } from './catalog-requests.js'
 import type { WebSearchResult } from './web-search.js'
+import {
+  filterNovelTagCandidates,
+  findMatchingExistingTags,
+} from './tag-governance.js'
 
 export type AgentIntent =
   | 'search'
@@ -470,6 +478,15 @@ function formatHistory(history: AgentConversationTurn[]): string {
     .join('\n')
 }
 
+function formatTagCatalog(tags: TagRow[]): string {
+  return JSON.stringify(
+    tags.map((tag) => ({
+      name: tag.name,
+      description: tag.description || null,
+    }))
+  )
+}
+
 async function summarizeNeed(
   message: string,
   history: AgentConversationTurn[],
@@ -544,7 +561,7 @@ async function createPlan(
     "locations": ["明确地点"],
     "people": ["人数或人群条件"]
   },
-  "new_tags": ["确有必要但当前 Tag 库不存在的新标签，最多3个"],
+  "new_tags": ["确有必要且现有 Tag 无法覆盖的新标签，最多1个"],
   "new_type": {"label":"新类型名称","code":"lower_snake_case","description":"说明"} 或 null
 }
 
@@ -565,11 +582,13 @@ Tag 与类型核对规则：
 2. 已有类型包含名称、代码和描述。必须根据类型描述选择最合适类型。
 3. 如果所有已有 Tag/类型描述都不合适，再在 new_tags/new_type 中提出申请。
 4. 检索关键词应优先来自需求总结中的具体对象、活动、地点和时间。
+5. new_tags 只允许完整、自然、可复用的名词或固定短语；禁止从原文随意切出二字片段，例如“手自”无效。
+6. 应先尽可能用已有 Tag 覆盖需求；只有确实缺失稳定概念时才提出新增，且最多 1 个。
 
 最近对话：
 ${formatHistory(history)}
 
-已有 Tag：${JSON.stringify(tags.map((tag) => tag.name))}
+已有 Tag（完整名称与描述）：${formatTagCatalog(tags)}
 已有类型：${JSON.stringify(sourceTypes)}`
 
   try {
@@ -681,7 +700,7 @@ ${formatHistory(history)}
       entities: hasModelEntities
         ? filteredEntities
         : extractBasicEntities(requestText),
-      missing_tags: uniqueStrings(payload.new_tags, 3).filter(
+      missing_tags: uniqueStrings(payload.new_tags, 1).filter(
         (tag) => !allowedTagNames.has(tag.toLowerCase())
       ),
       new_type_suggestion: normalizeNewType(payload.new_type),
@@ -1069,42 +1088,6 @@ function findActiveTagsByName(
     .filter((tag): tag is TagRow => Boolean(tag))
 }
 
-function inferCatalogTagSuggestions(
-  plan: AgentPlan,
-  tags: TagRow[]
-): string[] {
-  const activeTagNames = tags.map((tag) => tag.name.toLowerCase())
-  const entityTerms = [
-    ...plan.entities.time,
-    ...plan.entities.locations,
-    ...plan.entities.people,
-  ]
-    .map((term) => term.toLowerCase())
-    .filter(Boolean)
-  return plan.keywords
-    .map((keyword) => stripExcludedWords(keyword))
-    .filter(
-      (keyword) =>
-        keyword.length >= 2 &&
-        keyword.length <= 20 &&
-        !isExcludedTerm(keyword) &&
-        !/\d|[:：]|明天|今天|今晚|明晚|上午|下午|晚上|个人|楼/.test(
-          keyword
-        ) &&
-        !entityTerms.some(
-          (entity) =>
-            entity.includes(keyword.toLowerCase()) ||
-            keyword.toLowerCase().includes(entity)
-        ) &&
-        !activeTagNames.some(
-          (tagName) =>
-            tagName.includes(keyword.toLowerCase()) ||
-            keyword.toLowerCase().includes(tagName)
-        )
-    )
-    .slice(0, 2)
-}
-
 function dedupeCatalogTagSuggestions(tagNames: string[]): string[] {
   const sorted = [...new Set(tagNames)].sort(
     (left, right) => right.length - left.length
@@ -1130,12 +1113,9 @@ function fallbackDraft(
     sourceTypes.find((sourceType) => sourceType.value === 'partner') ||
     sourceTypes[0]
   const selectedTags = findActiveTagsByName(plan.tags, tags)
-  const newTags = [
-    ...new Set([
-      ...plan.missing_tags.filter((name) => !isExcludedTerm(name)),
-      ...inferCatalogTagSuggestions(plan, tags),
-    ]),
-  ].slice(0, 3)
+  const newTags = plan.missing_tags
+    .filter((name) => !isExcludedTerm(name))
+    .slice(0, 1)
   const newType = plan.new_type_suggestion
 
   return {
@@ -1174,7 +1154,7 @@ async function prepareDraft(
   "type": "已有类型代码",
   "tags": ["已有 Tag"],
   "location": "地点或 null",
-  "new_tags": ["现有 Tag 无法覆盖时提出，最多3个"],
+  "new_tags": ["现有 Tag 无法覆盖时提出，最多1个"],
   "new_type": {"label":"新类型名称","code":"lower_snake_case","description":"说明"} 或 null
 }
 
@@ -1183,8 +1163,10 @@ async function prepareDraft(
 2. 不得编造用户未提供的价格、地点、经验或承诺。
 3. type 和 tags 优先使用已有项；确实无法覆盖时写入 new_tags/new_type，等待管理员审核。
 4. 不得输出 Markdown。
+5. 必须先读取全部已有 Tag 名称与描述，优先复用。只有现有 Tag 无法覆盖、且候选是完整稳定的概念时，才可写入 new_tags。
+6. 禁止把原文随意切成二字片段；例如“手自”不是有效 Tag。
 
-已有 Tag：${JSON.stringify(tags.map((tag) => tag.name))}
+已有 Tag（完整名称与描述）：${formatTagCatalog(tags)}
 已有类型：${JSON.stringify(sourceTypes)}`
 
   try {
@@ -1216,9 +1198,8 @@ async function prepareDraft(
       .filter((tag): tag is TagRow => Boolean(tag))
     const newTags = [
       ...new Set([
-        ...uniqueStrings(payload.new_tags, 3),
+        ...uniqueStrings(payload.new_tags, 1),
         ...plan.missing_tags,
-        ...inferCatalogTagSuggestions(plan, tags),
       ]),
     ]
       .filter(
@@ -1226,7 +1207,7 @@ async function prepareDraft(
           !tagMap.has(tagName.toLowerCase()) &&
           !isExcludedTerm(tagName)
       )
-      .slice(0, 3)
+      .slice(0, 1)
     const newType = normalizeNewType(payload.new_type)
 
     return {
@@ -1318,7 +1299,7 @@ async function reviseDraft(
   "type": "已有类型代码",
   "tags": ["已有 Tag"],
   "location": "地点或 null",
-  "new_tags": ["现有 Tag 无法覆盖时提出，最多3个"],
+  "new_tags": ["现有 Tag 无法覆盖时提出，最多1个"],
   "new_type": {"label":"新类型名称","code":"lower_snake_case","description":"说明"} 或 null
 }
 
@@ -1327,7 +1308,9 @@ async function reviseDraft(
 2. 用户说“少/多几个人”时，替换旧正文中对应人数，不能简单追加矛盾内容。
 3. 不得把“更正一下”“就是现在草稿里的……”这类指令句写进正文。
 4. 不得编造用户未提供的信息。
-5. 优先使用已有 Tag 和类型。`
+5. 优先使用已有 Tag 和类型。
+6. 必须读取已有 Tag 描述；只有确实无法覆盖时才提出 new_tags。
+7. new_tags 必须是完整稳定的概念，禁止“手自”这类从原文切出的片段。`
 
   try {
     const raw = await completeChat([
@@ -1338,7 +1321,7 @@ async function reviseDraft(
 
 用户本轮更正或指代：${plan.request_text}
 
-已有 Tag：${JSON.stringify(tags.map((tag) => tag.name))}
+已有 Tag（完整名称与描述）：${formatTagCatalog(tags)}
 已有类型：${JSON.stringify(sourceTypes)}`,
       },
     ])
@@ -1361,9 +1344,8 @@ async function reviseDraft(
       .filter((tag): tag is TagRow => Boolean(tag))
     const newTags = [
       ...new Set([
-        ...uniqueStrings(payload.new_tags, 3),
+        ...uniqueStrings(payload.new_tags, 1),
         ...plan.missing_tags,
-        ...inferCatalogTagSuggestions(plan, tags),
       ]),
     ]
       .filter(
@@ -1371,7 +1353,7 @@ async function reviseDraft(
           !tagMap.has(tagName.toLowerCase()) &&
           !isExcludedTerm(tagName)
       )
-      .slice(0, 3)
+      .slice(0, 1)
     const newType = normalizeNewType(payload.new_type)
 
     return {
@@ -1707,11 +1689,77 @@ export async function prepareAgentContext(
   }
 
   if (draft) {
-    newTags = dedupeCatalogTagSuggestions(newTags)
+    const reviewStartedAt = Date.now()
+    const reviewContent = `${draft.title}\n${draft.content}\n${plan.need_summary}`
+    const proposedNewTags = dedupeCatalogTagSuggestions(
+      draft.new_tag_names
+    )
+    const deterministicReview = filterNovelTagCandidates(
+      proposedNewTags,
+      reviewContent,
+      tags
+    )
+    const lexicalExistingTags = findMatchingExistingTags(
+      reviewContent,
+      tags
+    ).map((tag) => tag.name)
+    const proposedExistingTags = [
+      ...new Set([...draft.tag_names, ...lexicalExistingTags]),
+    ].slice(0, 6)
+
+    updateTrace({
+      id: 'catalog_review',
+      tool: 'review_catalog_tags',
+      label: 'AI 核查 Tag 语法与新增必要性',
+      status: 'running',
+      summary: '正在读取已有 Tag 描述，并检查候选是否完整、重复或确有必要...',
+      duration_ms: 0,
+    })
+    const tagReview = await reviewDraftTagPlan({
+      content: reviewContent,
+      existingTags: tags,
+      proposedExistingTags,
+      proposedNewTags: deterministicReview.accepted,
+    })
+    const selectedExistingTags = findActiveTagsByName(
+      [
+        ...new Set([
+          ...lexicalExistingTags,
+          ...tagReview.selectedExistingTags,
+        ]),
+      ],
+      tags
+    ).slice(0, 3)
+    newTags = dedupeCatalogTagSuggestions(
+      tagReview.acceptedNewTags.filter((tagName) =>
+        deterministicReview.accepted.some(
+          (candidate) =>
+            candidate.toLowerCase() === tagName.toLowerCase()
+        )
+      )
+    ).slice(0, 1)
     draft = {
       ...draft,
+      tag_ids: selectedExistingTags.map((tag) => tag.id),
+      tag_names: selectedExistingTags.map((tag) => tag.name),
       new_tag_names: newTags,
     }
+    const rejectedCount = new Set([
+      ...deterministicReview.rejected.map((item) => item.name),
+      ...tagReview.rejectedNewTags.map((item) => item.name),
+    ]).size
+    updateTrace({
+      id: 'catalog_review',
+      tool: 'review_catalog_tags',
+      label: 'AI 核查 Tag 语法与新增必要性',
+      status: 'completed',
+      summary: `已复用 ${selectedExistingTags.length} 个现有 Tag${
+        selectedExistingTags.length > 0
+          ? `（${selectedExistingTags.map((tag) => tag.name).join('、')}）`
+          : ''
+      }；新增申请 ${newTags.length} 个；排除 ${rejectedCount} 个片段或冗余候选`,
+      duration_ms: Date.now() - reviewStartedAt,
+    })
     const catalogStartedAt = Date.now()
     updateTrace({
       id: 'catalog',

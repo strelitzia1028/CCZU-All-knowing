@@ -334,6 +334,183 @@ export async function suggestSourceType(
   );
 }
 
+export interface TagPlanReviewResult {
+  selectedExistingTags: string[];
+  acceptedNewTags: string[];
+  rejectedNewTags: Array<{ name: string; reason: string }>;
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  const objectText = value.match(/\{[\s\S]*\}/)?.[0];
+  if (!objectText) return null;
+
+  try {
+    const parsed = JSON.parse(objectText) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function reviewDraftTagPlan({
+  content,
+  existingTags,
+  proposedExistingTags,
+  proposedNewTags,
+}: {
+  content: string;
+  existingTags: Array<{ name: string; description?: string | null }>;
+  proposedExistingTags: string[];
+  proposedNewTags: string[];
+}): Promise<TagPlanReviewResult> {
+  const normalizedExisting = existingTags
+    .map((tag) => ({
+      name: tag.name.trim(),
+      description: tag.description?.trim() || null,
+    }))
+    .filter((tag) => tag.name);
+  const allowedExisting = new Map(
+    normalizedExisting.map((tag) => [tag.name.toLowerCase(), tag.name])
+  );
+  const proposedNew = new Map(
+    proposedNewTags
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => [name.toLowerCase(), name])
+  );
+  const fallbackExisting = [
+    ...new Set(
+      proposedExistingTags
+        .map((name) => allowedExisting.get(name.toLowerCase()))
+        .filter((name): name is string => Boolean(name))
+    ),
+  ].slice(0, 3);
+
+  if (normalizedExisting.length === 0) {
+    return {
+      selectedExistingTags: [],
+      acceptedNewTags: [],
+      rejectedNewTags: proposedNewTags.map((name) => ({
+        name,
+        reason: '当前没有可用 Tag 库，暂不自动新增',
+      })),
+    };
+  }
+
+  try {
+    const response = await requestCompletion(
+      appConfig.extractModel,
+      'Tag 语法与必要性审核模型',
+      [
+        {
+          role: 'system',
+          content: `你是校园信息源的 Tag 治理审核器。你必须先读取完整已有 Tag（名称和描述），再审核草稿与候选新增 Tag。
+
+任务：
+1. 从已有 Tag 中选择 0 到 3 个与需求直接匹配的 Tag。不能只因为名称相似就选择，必须符合 Tag 描述和正文语义。
+2. 审核候选新增 Tag。只有同时满足以下条件的候选才能进入 accepted：
+   - 是完整、自然、可独立理解的名词或固定短语；
+   - 不是原文中的二字片段、错别字、残词、动词短语或连接词；
+   - 不是一次性标题、时间、地点、价格、联系方式或具体个人；
+   - 未来可稳定复用于多条校园信息；
+   - 已有 Tag 的名称或描述无法覆盖。
+3. 像“手自”这种从“二手自行车”中切出的片段必须拒绝。
+4. 候选新增 Tag 即使通过基础检查，也不代表必须接受；宁可不新增，也不制造审核噪声。
+5. 最多接受 1 个新增 Tag，最多选择 3 个已有 Tag。
+
+只返回 JSON，不要 Markdown：
+{
+  "existing_tags": ["已有 Tag 名称"],
+  "new_tags": ["可接受的新 Tag"],
+  "rejected": [{"name":"候选","reason":"简短原因"}]
+}`,
+        },
+        {
+          role: 'user',
+          content: `需求内容：${content.slice(0, 5000)}
+
+已有 Tag（完整名称与描述）：${JSON.stringify(normalizedExisting)}
+
+草稿当前建议的已有 Tag：${JSON.stringify(proposedExistingTags)}
+
+候选新增 Tag（已通过基础词形检查）：${JSON.stringify(
+            proposedNewTags
+          )}`,
+        },
+      ],
+      false
+    );
+    const payload = (await response.json()) as ChatCompletionResponse;
+    const parsed = parseJsonRecord(
+      payload.choices?.[0]?.message?.content || ''
+    );
+    if (!parsed) {
+      return {
+        selectedExistingTags: fallbackExisting,
+        acceptedNewTags: [],
+        rejectedNewTags: proposedNewTags.map((name) => ({
+          name,
+          reason: 'AI 审核结果无法解析，按保守策略暂不新增',
+        })),
+      };
+    }
+
+    const selectedExistingTags = [
+      ...new Set(
+        (Array.isArray(parsed.existing_tags) ? parsed.existing_tags : [])
+          .filter((value): value is string => typeof value === 'string')
+          .map((name) => allowedExisting.get(name.toLowerCase()))
+          .filter((name): name is string => Boolean(name))
+      ),
+    ].slice(0, 3);
+    const acceptedNewTags = [
+      ...new Set(
+        (Array.isArray(parsed.new_tags) ? parsed.new_tags : [])
+          .filter((value): value is string => typeof value === 'string')
+          .map((name) => proposedNew.get(name.toLowerCase()))
+          .filter((name): name is string => Boolean(name))
+      ),
+    ].slice(0, 1);
+    const rejectedNewTags = Array.isArray(parsed.rejected)
+      ? parsed.rejected
+          .filter(
+            (value): value is Record<string, unknown> =>
+              Boolean(value && typeof value === 'object')
+          )
+          .map((value) => ({
+            name:
+              typeof value.name === 'string' ? value.name.trim() : '',
+            reason:
+              typeof value.reason === 'string'
+                ? value.reason.trim().slice(0, 160)
+                : 'AI 判定不适合新增',
+          }))
+          .filter((value) => value.name)
+      : [];
+
+    return {
+      selectedExistingTags:
+        selectedExistingTags.length > 0
+          ? selectedExistingTags
+          : fallbackExisting,
+      acceptedNewTags,
+      rejectedNewTags,
+    };
+  } catch (error) {
+    console.error('Draft tag governance review failed:', error);
+    return {
+      selectedExistingTags: fallbackExisting,
+      acceptedNewTags: [],
+      rejectedNewTags: proposedNewTags.map((name) => ({
+        name,
+        reason: 'AI 审核不可用，按保守策略暂不新增',
+      })),
+    };
+  }
+}
+
 export async function* streamChat(
   messages: LlmMessage[]
 ): AsyncGenerator<string> {
